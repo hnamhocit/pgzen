@@ -15,6 +15,7 @@ import {
   TrashIcon,
   PencilSimpleIcon,
   CopyIcon,
+  PlugIcon,
 } from "@phosphor-icons/react";
 import {
   ContextMenu,
@@ -91,6 +92,7 @@ function TreeNode({
   onDoubleClickTable,
   onViewData,
   onQueryTable,
+  onQueryDatabase,
 }: {
   node: NodeApi<DbNode>;
   style: React.CSSProperties;
@@ -106,8 +108,10 @@ function TreeNode({
   const getIcon = (type: NodeType, isOpen: boolean, isPk?: boolean) => {
     switch (type) {
       case "connection":
-        return (
-          <DatabaseIcon size={18} weight="fill" className="text-primary" />
+        return isOpen ? (
+          <PlugIcon size={18} weight="fill" className="text-green-500" />
+        ) : (
+          <PlugIcon size={18} weight="regular" className="text-muted-foreground" />
         );
       case "database":
         return (
@@ -255,10 +259,6 @@ function TreeNode({
               <DatabaseIcon size={14} />
               Query Database
             </ContextMenuItem>
-            <ContextMenuItem className="gap-2">
-              <FolderOpenIcon size={14} />
-              New Schema…
-            </ContextMenuItem>
             <ContextMenuItem className="gap-2" onClick={() => onRefreshNode?.(node.data)}>
               <ArrowClockwiseIcon size={14} />
               Refresh
@@ -268,10 +268,6 @@ function TreeNode({
 
         {node.data.type === "schema" && (
           <>
-            <ContextMenuItem className="gap-2">
-              <TableIcon size={14} />
-              New Table…
-            </ContextMenuItem>
             <ContextMenuItem className="gap-2" onClick={() => onRefreshNode?.(node.data)}>
               <ArrowClockwiseIcon size={14} />
               Refresh
@@ -283,15 +279,7 @@ function TreeNode({
           <>
             <ContextMenuItem className="gap-2" onClick={() => onViewData?.(node.data)}>View Data</ContextMenuItem>
             <ContextMenuItem className="gap-2" onClick={() => onQueryTable?.(node.data)}>Query Table</ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive">
-              Drop Table
-            </ContextMenuItem>
           </>
-        )}
-
-        {node.data.type === "column" && (
-          <ContextMenuItem className="gap-2">Edit Column…</ContextMenuItem>
         )}
 
         <ContextMenuSeparator />
@@ -333,10 +321,11 @@ export default function DatabaseExplorer() {
   }, [addTab]);
 
   const handleQueryDatabase = useCallback((node: DbNode) => {
-    addTab(`query_${node.name}.sql`, "sql", `query_db_${node.id}`, {
+    const uniqueId = `query_db_${node.id}_${Date.now()}`;
+    addTab(`Query - ${node.database}.sql`, "sql", uniqueId, {
       connectionId: node.connectionId,
       database: node.database,
-      queryText: `-- Querying ${node.database}\n`,
+      queryText: `-- Querying ${node.database}\n\n`,
     });
   }, [addTab]);
 

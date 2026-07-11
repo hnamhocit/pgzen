@@ -1,12 +1,11 @@
-import { Button } from "../ui/button";
 import { GlobalSearch } from "./GlobalSearch";
 import {
   XIcon,
   PlusIcon,
-  CheckIcon,
   FileSqlIcon,
   TableIcon,
   ListIcon,
+  CaretLeftIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import {
@@ -22,12 +21,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowUUpLeftIcon } from "@phosphor-icons/react/dist/ssr";
+import { GearIcon, QuestionIcon } from "@phosphor-icons/react/dist/ssr";
 import { Reorder } from "motion/react";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import { useTabStore, MAX_VISIBLE } from "@/store/useTabStore";
 
 export default function Header() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isMainWorkspace = location.pathname === "/";
   const {
     tabs,
     activeTab,
@@ -45,9 +48,11 @@ export default function Header() {
 
   return (
     <div className="h-14 border-b bg-white border-border flex items-center justify-between w-full shadow-sm overflow-hidden">
-      {/* Tab List Container */}
+      {/* Tab List Container or Back Button */}
       <div className="flex-1 min-w-0 h-full flex">
-        <Reorder.Group
+        {isMainWorkspace ? (
+          <>
+            <Reorder.Group
           axis="x"
           values={visibleTabs}
           onReorder={handleReorder}
@@ -200,11 +205,45 @@ export default function Header() {
         >
           <PlusIcon size={18} weight="bold" />
         </div>
+          </>
+        ) : (
+          <div className="flex items-center px-4 h-full gap-3">
+            <button
+              onClick={() => navigate("/")}
+              className="flex items-center gap-2 text-muted-foreground hover:text-foreground bg-accent/30 hover:bg-accent/70 px-3 py-1.5 rounded-md transition-colors text-sm font-medium outline-none"
+            >
+              <CaretLeftIcon size={16} weight="bold" />
+              Back to Workspace
+            </button>
+            <div className="w-px h-5 bg-border mx-2"></div>
+            <div className="font-semibold text-foreground capitalize">
+              {location.pathname.substring(1)}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Utilities (Fixed right) */}
-      <div className="flex items-center gap-4 shrink-0 pl-4 pr-4 z-10">
+      <div className="flex items-center gap-2 shrink-0 pl-4 pr-4 z-10">
         <GlobalSearch />
+        
+        <div className="w-px h-5 bg-border mx-2"></div>
+        
+        <button 
+          onClick={() => navigate("/help")}
+          className="text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors flex items-center justify-center outline-none"
+          title="Help"
+        >
+          <QuestionIcon size={20} />
+        </button>
+
+        <button 
+          onClick={() => navigate("/settings")}
+          className="text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors flex items-center justify-center outline-none"
+          title="Settings"
+        >
+          <GearIcon size={20} />
+        </button>
       </div>
     </div>
   );

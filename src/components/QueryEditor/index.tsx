@@ -62,6 +62,23 @@ function processQueryLimits(query: string): string {
   return query;
 }
 
+function extractQueryPlanFromResult(res: any[]): any {
+  for (const block of res) {
+    if (block.type === "command_complete" && block.rows && block.rows.length > 0) {
+      const firstRow = block.rows[0];
+      if (firstRow["QUERY PLAN"]) {
+        const planText = block.rows.map((r: any) => r["QUERY PLAN"]).join("\n");
+        try {
+          return JSON.parse(planText);
+        } catch(e) {
+          return null; // Not JSON format
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function isPureSelect(query: string): boolean {
   const stripped = stripSqlComments(query).toUpperCase();
   return (
@@ -71,25 +88,46 @@ function isPureSelect(query: string): boolean {
   );
 }
 
-function getQueryColorClass(query: string, hasError: boolean) {
-  if (hasError)
-    return "border-destructive/30 bg-destructive/5 text-destructive";
-  const firstWord = stripSqlComments(query)
-    .trim()
-    .split(/\s+/)[0]
-    .toUpperCase();
-  switch (firstWord) {
-    case "SELECT":
-      return "border-blue-500/30 bg-blue-500/5 text-blue-600 dark:text-blue-400";
-    case "INSERT":
-      return "border-green-500/30 bg-green-500/5 text-green-600 dark:text-green-400";
-    case "UPDATE":
-      return "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400";
-    case "DELETE":
-      return "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400";
-    default:
-      return "border-border bg-background text-foreground";
-  }
+function QueryHistoryItem({ item, onLoad }: { item: any; onLoad: () => void }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  return (
+    <div className="p-3 rounded-md text-xs font-mono border bg-muted/20 border-border hover:border-primary/50 hover:bg-muted/40 transition-colors group">
+      <div className="flex items-center justify-between mb-2 opacity-80 text-foreground">
+        <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-2 py-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? "Hide" : "Show"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-5 px-2 py-0 text-[10px] border-primary/20 hover:bg-primary/10 text-primary"
+            onClick={onLoad}
+          >
+            Load
+          </Button>
+        </div>
+      </div>
+      <div className={cn("opacity-70", isExpanded ? "whitespace-pre-wrap" : "truncate")}>
+        {item.query}
+      </div>
+      {item.error && isExpanded && (
+        <div className="mt-2 text-destructive border-t border-destructive/20 pt-2 whitespace-pre-wrap">
+          {item.error}
+        </div>
+      )}
+      {item.error && !isExpanded && (
+        <div className="mt-1 text-destructive truncate">
+          {item.error}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getColumnColor(type: string) {
@@ -175,8 +213,9 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
   // Resizable Panel State
   const [panelHeight, setPanelHeight] = useState(300);
   const [isDragging, setIsDragging] = useState(false);
-  const [activeTab, setActiveTab] = useState<"results" | "plan">("results");
   const [queryPlan, setQueryPlan] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<"results" | "plan">("results");
+  const [lastExecutedQuery, setLastExecutedQuery] = useState("");
 
   // History State
   const history = tab.history || [];
@@ -281,15 +320,19 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
 
       const t0 = performance.now();
 
+      const isExplain = stripSqlComments(finalQuery).toUpperCase().startsWith("EXPLAIN");
+
       if (isPureSelect(finalQuery)) {
-        // Fetch Query Plan Concurrently
-        invoke("explain_query", {
-          connectionId: tab.connectionId,
-          database: tab.database,
-          query: finalQuery,
-        })
-          .then((plan) => setQueryPlan(plan))
-          .catch((err) => setQueryPlan({ error: err.toString() }));
+        // Fetch Query Plan Concurrently if not manually typed EXPLAIN
+        if (!isExplain) {
+          invoke("explain_query", {
+            connectionId: tab.connectionId,
+            database: tab.database,
+            query: finalQuery,
+          })
+            .then((plan) => setQueryPlan(plan))
+            .catch((err) => setQueryPlan({ error: err.toString() }));
+        }
 
         // Run select directly via pool, NO transaction!
         const res: any[] = await invoke("execute_sql_raw", {
@@ -299,7 +342,19 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
         });
         setExecutionTime(performance.now() - t0);
         processResults(res);
+        
+        if (isExplain) {
+          const parsedPlan = extractQueryPlanFromResult(res);
+          if (parsedPlan) {
+            setQueryPlan(parsedPlan);
+          } else {
+            setQueryPlan({ error: "Text format EXPLAIN cannot be visualized. Use EXPLAIN (FORMAT JSON) for visual plan." });
+          }
+        }
+        
         addToHistory(finalQuery);
+        setLastExecutedQuery(finalQuery);
+        setActiveTab(isExplain ? "plan" : "results");
         toast.success("Query executed successfully.");
       } else {
         // Data manipulation query, use transaction session
@@ -319,6 +374,8 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
         setExecutionTime(performance.now() - t0);
         processResults(res);
         addToHistory(finalQuery);
+        setLastExecutedQuery(finalQuery);
+        setActiveTab("results");
         toast.success("Query executed in Preview mode.");
       }
     } catch (err: any) {
@@ -346,15 +403,19 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
       finalQuery = processFakerTemplates(query);
       finalQuery = processQueryLimits(finalQuery);
 
+      const isExplain = stripSqlComments(finalQuery).toUpperCase().startsWith("EXPLAIN");
+
       if (isPureSelect(finalQuery)) {
-        // Fetch Query Plan Concurrently
-        invoke("explain_query", {
-          connectionId: tab.connectionId,
-          database: tab.database,
-          query: finalQuery,
-        })
-          .then((plan) => setQueryPlan(plan))
-          .catch((err) => setQueryPlan({ error: err.toString() }));
+        if (!isExplain) {
+          // Fetch Query Plan Concurrently
+          invoke("explain_query", {
+            connectionId: tab.connectionId,
+            database: tab.database,
+            query: finalQuery,
+          })
+            .then((plan) => setQueryPlan(plan))
+            .catch((err) => setQueryPlan({ error: err.toString() }));
+        }
       }
 
       const t0 = performance.now();
@@ -365,7 +426,19 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
       });
       setExecutionTime(performance.now() - t0);
       processResults(res);
+      
+      if (isExplain) {
+        const parsedPlan = extractQueryPlanFromResult(res);
+        if (parsedPlan) {
+          setQueryPlan(parsedPlan);
+        } else {
+          setQueryPlan({ error: "Text format EXPLAIN cannot be visualized. Use EXPLAIN (FORMAT JSON) for visual plan." });
+        }
+      }
+      
       addToHistory(finalQuery);
+      setLastExecutedQuery(finalQuery);
+      setActiveTab(isExplain ? "plan" : "results");
       toast.success("Query executed immediately.");
     } catch (err: any) {
       setError(err.toString());
@@ -512,18 +585,22 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
             >
               {/* Tabs */}
               <div className="flex items-center border-b border-border bg-muted/20 shrink-0 px-2">
-                <button
-                  onClick={() => setActiveTab("results")}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "results" ? "border-primary text-primary bg-background" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-                >
-                  Results
-                </button>
-                <button
-                  onClick={() => setActiveTab("plan")}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "plan" ? "border-primary text-primary bg-background" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-                >
-                  Query Plan
-                </button>
+                {(!lastExecutedQuery || !stripSqlComments(lastExecutedQuery).toUpperCase().startsWith("EXPLAIN")) && (
+                  <button
+                    onClick={() => setActiveTab("results")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "results" ? "border-primary text-primary bg-background" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Results
+                  </button>
+                )}
+                {lastExecutedQuery && isPureSelect(lastExecutedQuery) && (
+                  <button
+                    onClick={() => setActiveTab("plan")}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "plan" ? "border-primary text-primary bg-background" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                  >
+                    Query Plan
+                  </button>
+                )}
               </div>
 
               {/* Tab Content */}
@@ -707,30 +784,11 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
           <div className="max-h-[300px] overflow-auto space-y-3 pr-2 shrink-0">
             {history.length > 0 ? (
               history.map((item, i) => (
-                <div
-                  key={i}
-                  className={`p-3 rounded-md text-xs font-mono border ${getQueryColorClass(item.query, !!item.error)}`}
-                >
-                  <div className="flex items-center justify-between mb-2 opacity-80 text-foreground">
-                    <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-5 px-1 py-0 text-[10px]"
-                      onClick={() => handleQueryChange(item.query)}
-                    >
-                      Load
-                    </Button>
-                  </div>
-                  <div className="whitespace-pre-wrap max-h-[100px] overflow-y-auto opacity-90">
-                    {item.query}
-                  </div>
-                  {item.error && (
-                    <div className="mt-2 text-destructive border-t border-destructive/20 pt-2 whitespace-pre-wrap">
-                      {item.error}
-                    </div>
-                  )}
-                </div>
+                <QueryHistoryItem 
+                  key={i} 
+                  item={item} 
+                  onLoad={() => handleQueryChange(item.query)} 
+                />
               ))
             ) : (
               <div className="text-sm text-muted-foreground text-center mt-6">

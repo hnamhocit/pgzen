@@ -2,8 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { TabDoc } from "@/store/useTabStore";
 import { invoke } from "@tauri-apps/api/core";
 import { Input } from "@/components/ui/input";
-import { FunnelIcon, CircleNotchIcon, KeyIcon, CaretLeftIcon, CaretRightIcon, TrashIcon, ClockCounterClockwiseIcon, TableIcon, TreeStructureIcon, ListDashesIcon } from "@phosphor-icons/react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { FunnelIcon, CircleNotchIcon, KeyIcon, CaretLeftIcon, CaretRightIcon, TrashIcon, ClockCounterClockwiseIcon, TableIcon, TreeStructureIcon, ListDashesIcon, CodeIcon, XIcon, CheckSquareOffsetIcon, PencilSimpleIcon, DownloadSimpleIcon, FileTextIcon, FileCodeIcon } from "@phosphor-icons/react";
+import { SiTypescript, SiDart, SiPython, SiRuby } from "react-icons/si";
+import { FaRust, FaJava } from "react-icons/fa6";
+import { TbBrandCSharp } from "react-icons/tb";
 import { cn } from "@/lib/utils";
+import { generateCode, Language } from "@/lib/codegen";
+import * as XLSX from "xlsx";
 import ERDViewer from "./ERDViewer";
 import TableDetailsViewer from "./TableDetailsViewer";
 
@@ -100,9 +106,105 @@ export default function DataViewer({ tab }: { tab: TabDoc }) {
 
   const [selectedIndex, setSelectedIndex] = useState(0);
 
+  // Selection & Drag State
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartRow, setDragStartRow] = useState<number | null>(null);
+  const [dragMode, setDragMode] = useState<'select' | 'deselect' | null>(null);
+  const [dragBaseSelection, setDragBaseSelection] = useState<Set<number>>(new Set());
+  const [isStagedDelete, setIsStagedDelete] = useState(false);
+
+  useEffect(() => {
+    if (selectedRows.size === 0) setIsStagedDelete(false);
+  }, [selectedRows.size]);
+
   useEffect(() => {
     setSelectedIndex(0);
   }, [filterText, showSuggestions]);
+
+  useEffect(() => {
+    const handleMouseUp = () => setIsDragging(false);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, []);
+
+  const handleRowMouseDown = (index: number) => {
+    setIsDragging(true);
+    setDragStartRow(index);
+    const mode = selectedRows.has(index) ? 'deselect' : 'select';
+    setDragMode(mode);
+    setDragBaseSelection(new Set(selectedRows));
+
+    setSelectedRows(prev => {
+      const next = new Set(prev);
+      if (mode === 'select') next.add(index);
+      else next.delete(index);
+      return next;
+    });
+  };
+
+  const handleRowMouseEnter = (index: number) => {
+    if (isDragging && dragStartRow !== null && dragMode) {
+      const start = Math.min(dragStartRow, index);
+      const end = Math.max(dragStartRow, index);
+      const next = new Set(dragBaseSelection);
+      for (let i = start; i <= end; i++) {
+        if (dragMode === 'select') next.add(i);
+        else next.delete(i);
+      }
+      setSelectedRows(next);
+    }
+  };
+
+  const handleCopyAsCode = async (lang: Language) => {
+    const selectedData = Array.from(selectedRows).sort((a, b) => a - b).map(idx => data[idx]);
+    const code = generateCode(lang, tab.table || "", columns, selectedData);
+    await navigator.clipboard.writeText(code);
+    setSelectedRows(new Set());
+  };
+
+  const handleExport = (format: 'json' | 'xlsx' | 'csv') => {
+    const selectedData = Array.from(selectedRows).sort((a, b) => a - b).map(idx => data[idx]);
+    if (selectedData.length === 0) return;
+
+    if (format === 'json') {
+      const jsonStr = JSON.stringify(selectedData, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${tab.table}_export.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else if (format === 'xlsx') {
+      const worksheet = XLSX.utils.json_to_sheet(selectedData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+      XLSX.writeFile(workbook, `${tab.table}_export.xlsx`);
+    } else if (format === 'csv') {
+      const header = columns.map(c => `"${c.name}"`).join(",");
+      const csv = selectedData.map(row => 
+        columns.map(c => {
+          let val = row[c.name];
+          if (val === null || val === undefined) return '""';
+          if (typeof val === 'object') val = JSON.stringify(val);
+          return `"${String(val).replace(/"/g, '""')}"`;
+        }).join(",")
+      ).join("\n");
+      const blob = new Blob([`${header}\n${csv}`], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${tab.table}_export.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    setSelectedRows(new Set());
+  };
 
   const saveHistory = (filter: string) => {
     if (!filter) return;
@@ -257,6 +359,7 @@ export default function DataViewer({ tab }: { tab: TabDoc }) {
         if (!isMounted) return;
         setData(rows);
         setExecutionTime(t1 - t0);
+        setSelectedRows(new Set()); // Reset selection on page change
       } catch (err: any) {
         if (isMounted) setError(err.toString());
       } finally {
@@ -281,192 +384,292 @@ export default function DataViewer({ tab }: { tab: TabDoc }) {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden bg-background">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 p-3 border-b border-border bg-muted/30 shrink-0">
-        <div className="flex items-center bg-muted border border-border rounded-md p-0.5">
-          <button
-            onClick={() => setActiveTab("data")}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-sm transition-all",
-              activeTab === "data" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <TableIcon size={14} /> Data
-          </button>
-          <button
-            onClick={() => setActiveTab("erd")}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-sm transition-all",
-              activeTab === "erd" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <TreeStructureIcon size={14} /> ER Diagram
-          </button>
-          <button
-            onClick={() => setActiveTab("structure")}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-sm transition-all",
-              activeTab === "structure" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <ListDashesIcon size={14} /> Structure
-          </button>
-        </div>
-
-        {activeTab === "data" && (
-          <>
-            <div className="relative w-80">
-              <FunnelIcon
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            size={16}
-          />
-          <Input
-            ref={inputRef}
-            value={filterText}
-            onChange={(e) => {
-              setFilterText(e.target.value);
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            onBlur={() => {
-              setTimeout(() => setShowSuggestions(false), 200);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                setAppliedFilter(filterText);
-                saveHistory(filterText);
-                setPage(1);
-                setShowSuggestions(false);
-              } else if (e.key === "Escape") {
-                setShowSuggestions(false);
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                if (showSuggestions && suggestions.length > 0) {
-                  setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, suggestions.length - 1)));
-                } else {
-                  setShowSuggestions(true);
-                }
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setSelectedIndex(prev => Math.max(prev - 1, 0));
-              } else if (e.key === "Tab") {
-                if (showSuggestions && suggestions.length > 0) {
-                  e.preventDefault();
-                  handleSuggestionClick(suggestions[selectedIndex]);
-                }
-              }
-            }}
-            placeholder="Filter data... e.g. age > 18 && date between ('2020', '2021')"
-            className="h-9 pl-9 shadow-sm bg-background border-border focus-visible:ring-1 font-mono text-xs"
-          />
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute top-full left-0 min-w-full w-max max-w-lg mt-1 bg-popover border border-border shadow-lg rounded-md z-50 max-h-60 overflow-auto py-1">
-              {!filterText && filterHistory.length > 0 && (
-                <div className="px-3 py-1.5 flex items-center justify-between group">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                    <ClockCounterClockwiseIcon /> Recent Filters
-                  </span>
-                  <button 
-                    onMouseDown={clearHistory}
-                    className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <TrashIcon /> Clear
-                  </button>
-                </div>
+      <div className="flex flex-col border-b border-border bg-muted/30 shrink-0">
+        <div className="flex items-center gap-3 p-3">
+          <div className="flex items-center bg-muted border border-border rounded-md p-0.5">
+            <button
+              onClick={() => setActiveTab("data")}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+                activeTab === "data" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
-              {suggestions.map((s, idx) => {
-                // Add a divider before columns if showing history
-                const isFirstColumnAfterHistory = !filterText && s.type === 'column' && idx > 0 && suggestions[idx - 1].type === 'history';
-                
-                return (
-                  <div key={idx}>
-                    {isFirstColumnAfterHistory && (
-                      <div className="px-3 py-1.5 mt-1 border-t border-border/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        Columns
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        "px-3 py-1.5 text-sm cursor-pointer font-mono flex items-center gap-2",
-                        selectedIndex === idx ? "bg-muted" : "hover:bg-muted"
-                      )}
-                      onMouseEnter={() => setSelectedIndex(idx)}
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // prevent blur
-                        handleSuggestionClick(s);
-                      }}
+            >
+              <TableIcon size={16} /> Data
+            </button>
+            <button
+              onClick={() => setActiveTab("erd")}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+                activeTab === "erd" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <TreeStructureIcon size={16} /> ER Diagram
+            </button>
+            <button
+              onClick={() => setActiveTab("structure")}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+                activeTab === "structure" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ListDashesIcon size={16} /> Structure
+            </button>
+          </div>
+
+          {activeTab === "data" && (
+            <div className="text-xs text-muted-foreground font-medium ml-auto flex items-center gap-4">
+              {error ? (
+                <span className="text-destructive">Error fetching data</span>
+              ) : loading ? (
+                "Fetching data..."
+              ) : (
+                <>
+                  <span>
+                    Showing <strong className="text-foreground">{data.length}</strong> {totalRows !== null && `of ${formatNumber(totalRows)}`} rows
+                    {executionTime !== null && <span className="text-muted-foreground/60 ml-1">({executionTime.toFixed(0)}ms)</span>}
+                  </span>
+                  
+                  {/* Pagination Controls */}
+                  <div className="flex items-center gap-1 bg-background border border-border rounded-md shadow-sm p-1 ml-2">
+                    <button
+                      className="p-1.5 hover:bg-muted rounded text-foreground disabled:opacity-30 transition-colors"
+                      disabled={page === 1 || loading}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      title="Previous Page"
                     >
-                      {s.type === 'history' && <ClockCounterClockwiseIcon className="text-muted-foreground shrink-0" size={14} />}
-                      {s.type === 'column' && <span className="text-[10px] bg-primary/10 text-primary px-1 rounded uppercase tracking-wider font-sans shrink-0">COL</span>}
-                      {s.type === 'keyword' && <span className="text-[10px] bg-muted-foreground/10 text-muted-foreground px-1 rounded uppercase tracking-wider font-sans shrink-0">KEY</span>}
-                      <span className="break-all">{s.value}</span>
-                      {s.dataType && (
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider shrink-0",
-                          selectedIndex !== idx && "ml-auto",
-                          getColumnColor(s.dataType).bg
-                        )}>
-                          {s.dataType}
-                        </span>
-                      )}
-                      {selectedIndex === idx && (
-                        <span className="text-[10px] bg-foreground/10 text-foreground px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ml-auto flex items-center gap-1">
-                          Tab ⇥
-                        </span>
-                      )}
+                      <CaretLeftIcon size={14} weight="bold" />
+                    </button>
+                    <div className="flex items-center gap-1 px-1 text-foreground font-medium">
+                      <input
+                        type="text"
+                        value={pageInput}
+                        onChange={(e) => setPageInput(e.target.value)}
+                        onBlur={handlePageJump}
+                        onKeyDown={(e) => e.key === "Enter" && handlePageJump()}
+                        className="w-10 h-6 text-center text-xs bg-transparent border border-transparent hover:border-border focus:border-primary rounded outline-none transition-colors"
+                      />
+                      <span className="text-muted-foreground select-none">/ {totalPages}</span>
                     </div>
+                    <button
+                      className="p-1.5 hover:bg-muted rounded text-foreground disabled:opacity-30 transition-colors"
+                      disabled={(totalRows !== null && page >= totalPages) || data.length < pageSize || loading}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      title="Next Page"
+                    >
+                      <CaretRightIcon size={14} weight="bold" />
+                    </button>
                   </div>
-                );
-              })}
+                </>
+              )}
             </div>
           )}
         </div>
-        <div className="text-xs text-muted-foreground font-medium ml-auto flex items-center gap-4">
-          {error ? (
-            <span className="text-destructive">Error fetching data</span>
-          ) : loading ? (
-            "Fetching data..."
-          ) : (
-            <>
-              <span>
-                Showing <strong className="text-foreground">{data.length}</strong> {totalRows !== null && `of ${formatNumber(totalRows)}`} rows
-                {executionTime !== null && <span className="text-muted-foreground/60 ml-1">({executionTime.toFixed(0)}ms)</span>}
-              </span>
-              
-              {/* Pagination Controls */}
-              <div className="flex items-center gap-1 bg-background border border-border rounded-md shadow-sm p-1 ml-2">
-                <button
-                  className="p-1.5 hover:bg-muted rounded text-foreground disabled:opacity-30 transition-colors"
-                  disabled={page === 1 || loading}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  title="Previous Page"
-                >
-                  <CaretLeftIcon size={14} weight="bold" />
-                </button>
-                <div className="flex items-center gap-1 px-1 text-foreground font-medium">
-                  <input
-                    type="text"
-                    value={pageInput}
-                    onChange={(e) => setPageInput(e.target.value)}
-                    onBlur={handlePageJump}
-                    onKeyDown={(e) => e.key === "Enter" && handlePageJump()}
-                    className="w-10 h-6 text-center text-xs bg-transparent border border-transparent hover:border-border focus:border-primary rounded outline-none transition-colors"
-                  />
-                  <span className="text-muted-foreground select-none">/ {totalPages}</span>
+
+        {activeTab === "data" && (
+          <div className="flex items-center gap-3 px-3 pb-3">
+            <div className="relative flex-1 max-w-xl">
+              <FunnelIcon
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                size={16}
+              />
+              <Input
+                ref={inputRef}
+                value={filterText}
+                onChange={(e) => {
+                  setFilterText(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => {
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setAppliedFilter(filterText);
+                    saveHistory(filterText);
+                    setPage(1);
+                    setShowSuggestions(false);
+                  } else if (e.key === "Escape") {
+                    setShowSuggestions(false);
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    if (showSuggestions && suggestions.length > 0) {
+                      setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, suggestions.length - 1)));
+                    } else {
+                      setShowSuggestions(true);
+                    }
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSelectedIndex(prev => Math.max(prev - 1, 0));
+                  } else if (e.key === "Tab") {
+                    if (showSuggestions && suggestions.length > 0) {
+                      e.preventDefault();
+                      handleSuggestionClick(suggestions[selectedIndex]);
+                    }
+                  }
+                }}
+                placeholder="Filter data... e.g. age > 18 && date between ('2020', '2021')"
+                className="h-9 pl-9 shadow-sm bg-background border-border focus-visible:ring-1 font-mono text-xs"
+              />
+              {showSuggestions && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 min-w-full w-max max-w-lg mt-1 bg-popover border border-border shadow-lg rounded-md z-50 max-h-60 overflow-auto py-1">
+                  {!filterText && filterHistory.length > 0 && (
+                    <div className="px-3 py-1.5 flex items-center justify-between group">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                        <ClockCounterClockwiseIcon /> Recent Filters
+                      </span>
+                      <button 
+                        onMouseDown={clearHistory}
+                        className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <TrashIcon /> Clear
+                      </button>
+                    </div>
+                  )}
+                  {suggestions.map((s, idx) => {
+                    const isFirstColumnAfterHistory = !filterText && s.type === 'column' && idx > 0 && suggestions[idx - 1].type === 'history';
+                    return (
+                      <div key={idx}>
+                        {isFirstColumnAfterHistory && (
+                          <div className="px-3 py-1.5 mt-1 border-t border-border/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                            Columns
+                          </div>
+                        )}
+                        <div
+                          className={cn(
+                            "px-3 py-1.5 text-sm cursor-pointer font-mono flex items-center gap-2",
+                            selectedIndex === idx ? "bg-muted" : "hover:bg-muted"
+                          )}
+                          onMouseEnter={() => setSelectedIndex(idx)}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSuggestionClick(s);
+                          }}
+                        >
+                          {s.type === 'history' && <ClockCounterClockwiseIcon className="text-muted-foreground shrink-0" size={14} />}
+                          {s.type === 'column' && <span className="text-[10px] bg-primary/10 text-primary px-1 rounded uppercase tracking-wider font-sans shrink-0">COL</span>}
+                          {s.type === 'keyword' && <span className="text-[10px] bg-muted-foreground/10 text-muted-foreground px-1 rounded uppercase tracking-wider font-sans shrink-0">KEY</span>}
+                          <span className="break-all">{s.value}</span>
+                          {s.dataType && (
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider shrink-0",
+                              selectedIndex !== idx && "ml-auto",
+                              getColumnColor(s.dataType).bg
+                            )}>
+                              {s.dataType}
+                            </span>
+                          )}
+                          {selectedIndex === idx && (
+                            <span className="text-[10px] bg-foreground/10 text-foreground px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ml-auto flex items-center gap-1">
+                              Tab ⇥
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <button
-                  className="p-1.5 hover:bg-muted rounded text-foreground disabled:opacity-30 transition-colors"
-                  disabled={(totalRows !== null && page >= totalPages) || data.length < pageSize || loading}
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  title="Next Page"
-                >
-                  <CaretRightIcon size={14} weight="bold" />
-                </button>
+              )}
+            </div>
+
+            {selectedRows.size > 0 && (
+              <div className="flex items-center gap-4 ml-auto">
+                <span className="text-xs font-semibold text-primary/80 mr-2 flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10">
+                  <CheckSquareOffsetIcon weight="fill" size={16} /> {selectedRows.size} selected
+                </span>
+                
+                {!isStagedDelete ? (
+                  <>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 px-2 py-1.5 rounded transition-colors outline-none cursor-pointer">
+                        <CodeIcon size={16} /> Copy as Code
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44 z-50">
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('rust')}>
+                          <FaRust className="text-[#dea584]" size={14} /> Rust Struct
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('typescript')}>
+                          <SiTypescript className="text-[#3178c6]" size={14} /> TypeScript Interface
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('ruby')}>
+                          <SiRuby className="text-[#cc342d]" size={14} /> Ruby Class
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('csharp')}>
+                          <TbBrandCSharp className="text-[#9b4f96]" size={14} /> C# Class
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('dart')}>
+                          <SiDart className="text-[#0175c2]" size={14} /> Flutter (Dart)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('python')}>
+                          <SiPython className="text-[#3776ab]" size={14} /> Python Dataclass
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleCopyAsCode('java')}>
+                          <FaJava className="text-[#f89820]" size={14} /> Java Class
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50 px-2 py-1.5 rounded transition-colors outline-none cursor-pointer">
+                        <DownloadSimpleIcon size={16} /> Export
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40 z-50">
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleExport('csv')}>
+                          <FileTextIcon className="text-green-600" size={14} /> CSV File (.csv)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleExport('xlsx')}>
+                          <TableIcon className="text-emerald-600" size={14} /> Excel (.xlsx)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer flex items-center gap-2" onClick={() => handleExport('json')}>
+                          <FileCodeIcon className="text-amber-500" size={14} /> JSON Data
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <div className="w-px h-5 bg-border mx-1"></div>
+
+                    <button className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 px-2 py-1.5 rounded transition-colors">
+                      <PencilSimpleIcon size={16} /> Edit
+                    </button>
+                    <button 
+                      onClick={() => setIsStagedDelete(true)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded transition-colors"
+                    >
+                      <TrashIcon size={16} /> Delete
+                    </button>
+
+                    <div className="w-px h-5 bg-border mx-1"></div>
+
+                    <button 
+                      onClick={() => setSelectedRows(new Set())}
+                      className="flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors"
+                      title="Discard selection"
+                    >
+                      <XIcon size={16} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={() => {
+                        setIsStagedDelete(false);
+                        setSelectedRows(new Set());
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-medium text-background bg-destructive hover:bg-destructive/90 px-3 py-1.5 rounded transition-colors"
+                    >
+                      <TrashIcon size={16} weight="fill" /> Commit Delete
+                    </button>
+                    <button 
+                      onClick={() => setIsStagedDelete(false)}
+                      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted px-3 py-1.5 rounded transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
               </div>
-            </>
-          )}
-        </div>
-          </>
+            )}
+          </div>
         )}
       </div>
 
@@ -524,33 +727,51 @@ export default function DataViewer({ tab }: { tab: TabDoc }) {
               </tr>
             </thead>
             <tbody>
-              {data.map((row, i) => (
-                <tr key={i} className="hover:bg-blue-50/50 dark:hover:bg-blue-900/20 even:bg-slate-50/50 dark:even:bg-slate-800/20 odd:bg-transparent transition-colors group">
-                  <td className="px-5 py-3 font-mono text-sm text-muted-foreground bg-muted/30 text-center border-b border-r border-gray-100 dark:border-gray-800/50">
-                    {(page - 1) * pageSize + i + 1}
-                  </td>
-                  {columns.map((c) => {
-                    const val = row[c.name];
-                    return (
-                      <td
-                        key={c.name}
-                        className={cn(
-                          "px-5 py-3 font-mono text-sm truncate max-w-[300px] border-b border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 transition-colors",
-                          c.is_primary_key ? "text-amber-500 font-semibold dark:text-amber-400" : getColumnColor(c.data_type).text
-                        )}
-                      >
-                        {val === null || val === undefined ? (
-                          <span className="italic opacity-50">null</span>
-                        ) : typeof val === "object" ? (
-                          JSON.stringify(val)
-                        ) : (
-                          String(val)
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {data.map((row, i) => {
+                const isSelected = selectedRows.has(i);
+                return (
+                  <tr 
+                    key={i} 
+                    className={cn(
+                      "transition-colors group select-none",
+                      isSelected && !isStagedDelete ? "bg-primary/20 dark:bg-primary/30" : 
+                      isSelected && isStagedDelete ? "bg-destructive/20 dark:bg-destructive/30" : 
+                      "hover:bg-blue-50/50 dark:hover:bg-blue-900/20 even:bg-slate-50/50 dark:even:bg-slate-800/20 odd:bg-transparent"
+                    )}
+                    onMouseDown={() => handleRowMouseDown(i)}
+                    onMouseEnter={() => handleRowMouseEnter(i)}
+                  >
+                    <td className={cn(
+                      "px-5 py-3 font-mono text-sm text-center border-b border-r border-gray-100 dark:border-gray-800/50",
+                      isSelected ? "bg-primary/10 text-primary font-bold" : "text-muted-foreground bg-muted/30",
+                      isSelected && isStagedDelete && "bg-destructive/20 text-destructive"
+                    )}>
+                      {(page - 1) * pageSize + i + 1}
+                    </td>
+                    {columns.map((c) => {
+                      const val = row[c.name];
+                      return (
+                        <td
+                          key={c.name}
+                          className={cn(
+                            "px-5 py-3 font-mono text-sm truncate max-w-[300px] border-b border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 transition-colors",
+                            c.is_primary_key ? "text-amber-500 font-semibold dark:text-amber-400" : getColumnColor(c.data_type).text,
+                            isSelected && isStagedDelete && "line-through opacity-60 text-destructive dark:text-destructive font-medium"
+                          )}
+                        >
+                          {val === null || val === undefined ? (
+                            <span className="italic opacity-50">null</span>
+                          ) : typeof val === "object" ? (
+                            JSON.stringify(val)
+                          ) : (
+                            String(val)
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
               {data.length === 0 && !loading && !error && (
                 <tr>
                   <td
