@@ -1,8 +1,5 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { TabDoc } from "@/store/useTabStore";
 import { DatabaseIcon, ArrowsClockwise, Copy, TerminalWindow, DotsThree } from "@phosphor-icons/react";
-import { ComprehensiveTableDetails } from "./types";
 
 // Import sections
 import ColumnsSection from "./Sections/ColumnsSection";
@@ -18,44 +15,11 @@ interface TableInspectorProps {
   tab: TabDoc;
 }
 
-function formatBytes(bytes: number, decimals = 2) {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
-}
+import { formatBytes } from "../utils";
+import { useTableInspector } from "../hooks/useTableInspector";
 
 export default function TableInspector({ tab }: TableInspectorProps) {
-  const [details, setDetails] = useState<ComprehensiveTableDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchDetails = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await invoke<ComprehensiveTableDetails>("get_comprehensive_table_details", {
-        connectionId: tab.connectionId,
-        database: tab.database,
-        schema: tab.schema,
-        table: tab.title,
-      });
-      setDetails(result);
-    } catch (err: any) {
-      console.error("Failed to fetch comprehensive table details", err);
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (tab.connectionId && tab.database && tab.schema && tab.title) {
-      fetchDetails();
-    }
-  }, [tab]);
+  const { details, loading, error, fetchDetails } = useTableInspector(tab);
 
   if (loading) {
     return (

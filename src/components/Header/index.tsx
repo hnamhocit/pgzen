@@ -1,4 +1,5 @@
 import { GlobalSearch } from "./GlobalSearch";
+import { ModeToggle } from "@/components/mode-toggle";
 import {
   XIcon,
   PlusIcon,
@@ -47,7 +48,7 @@ export default function Header() {
   const hiddenTabs = tabs.slice(MAX_VISIBLE);
 
   return (
-    <div className="h-14 border-b bg-white border-border flex items-center justify-between w-full shadow-sm overflow-hidden">
+    <div className="h-14 border-b bg-background border-border flex items-center justify-between w-full shadow-sm overflow-hidden">
       {/* Tab List Container or Back Button */}
       <div className="flex-1 min-w-0 h-full flex">
         {isMainWorkspace ? (
@@ -236,6 +237,8 @@ export default function Header() {
         >
           <QuestionIcon size={20} />
         </button>
+
+        <ModeToggle />
 
         <button 
           onClick={() => navigate("/settings")}

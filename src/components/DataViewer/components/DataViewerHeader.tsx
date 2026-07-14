@@ -1,0 +1,72 @@
+import { cn } from "@/lib/utils";
+import { TableIcon, TreeStructureIcon, ListDashesIcon } from "@phosphor-icons/react";
+import { useDataViewerStore } from "../store/useDataViewerStore";
+import { formatNumber } from "../utils";
+import { Pagination } from "./Pagination";
+
+export function DataViewerHeader() {
+  const {
+    activeTab,
+    setActiveTab,
+    error,
+    loading,
+    data,
+    totalRows,
+    executionTime,
+  } = useDataViewerStore();
+
+  return (
+    <div className="flex flex-col border-b border-border bg-muted/30 shrink-0">
+      <div className="flex items-center gap-3 p-3">
+        <div className="flex items-center bg-muted border border-border rounded-md p-0.5">
+          <button
+            onClick={() => setActiveTab("data")}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+              activeTab === "data" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <TableIcon size={16} /> Data
+          </button>
+          <button
+            onClick={() => setActiveTab("erd")}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+              activeTab === "erd" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <TreeStructureIcon size={16} /> ER Diagram
+          </button>
+          <button
+            onClick={() => setActiveTab("structure")}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium rounded-sm transition-all",
+              activeTab === "structure" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <ListDashesIcon size={16} /> Structure
+          </button>
+        </div>
+
+        {activeTab === "data" && (
+          <div className="text-xs text-muted-foreground font-medium ml-auto flex items-center gap-4">
+            {error ? (
+              <span className="text-destructive">Error fetching data</span>
+            ) : loading ? (
+              "Fetching data..."
+            ) : (
+              <>
+                <span>
+                  Showing <strong className="text-foreground">{data.length}</strong> {totalRows !== null && `of ${formatNumber(totalRows)}`} rows
+                  {executionTime !== null && <span className="text-muted-foreground/60 ml-1">({executionTime.toFixed(0)}ms)</span>}
+                </span>
+                
+                <Pagination />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

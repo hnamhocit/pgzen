@@ -1,4 +1,4 @@
-import { Edge, Node, MarkerType } from '@xyflow/react';
+import { Edge, Node } from '@xyflow/react';
 import { SchemaErdData, SchemaTableInfo, SchemaForeignKeyInfo } from '@/lib/tauri';
 
 export class GraphEngine {

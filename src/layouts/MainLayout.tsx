@@ -9,7 +9,7 @@ export default function MainLayout() {
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* ── Sidebar ─────────────────────────────────────────────── */}
-      <div className="shrink-0 w-64 bg-white border-r border-border flex flex-col">
+      <div className="shrink-0 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col">
         {/* Logo + New Connection */}
         <div className="border-b border-border p-4 shrink-0">
           <Link to="/" className="flex items-center gap-1 mb-4 hover:opacity-80 transition-opacity">

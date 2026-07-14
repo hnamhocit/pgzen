@@ -106,36 +106,37 @@
 }
 
 .dark {
-  /* Nền chính: Xanh không gian sâu / Tím than cực tối */
-  --background: oklch(0.17 0.03 275);
-  /* Chữ: Xám tro sáng, không dùng trắng tinh tránh chói */
-  --foreground: oklch(0.85 0.01 275);
+  /* Nền chính: Dark Zinc - Chuyên nghiệp và hiện đại */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.98 0 0);
 
-  /* Các panel/tab nổi lên: Sáng hơn nền chính 1 chút */
-  --card: oklch(0.2 0.035 275);
-  --card-foreground: oklch(0.85 0.01 275);
-  --popover: oklch(0.2 0.035 275);
-  --popover-foreground: oklch(0.85 0.01 275);
+  /* Các panel/tab nổi lên */
+  --card: oklch(0.165 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.165 0 0);
+  --popover-foreground: oklch(0.98 0 0);
 
-  /* Primary Action (VD: Nút Commit): Blurple hoặc Cyan nhạt */
-  --primary: oklch(0.65 0.15 275);
-  --primary-foreground: oklch(0.98 0.01 275);
+  /* Primary Action (VD: Nút Commit): Giữ màu Blurple đặc trưng của PgZen nhưng sáng hơn 1 chút cho dark mode */
+  --primary: oklch(0.55 0.15 275);
+  --primary-foreground: oklch(0.98 0 0);
 
   /* Secondary/Muted: Dành cho text phụ, viền border mờ */
-  --secondary: oklch(0.25 0.04 275);
-  --secondary-foreground: oklch(0.75 0.02 275);
-  --muted: oklch(0.22 0.04 275);
-  --muted-foreground: oklch(0.65 0.02 275);
+  --secondary: oklch(0.21 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.21 0 0);
+  --muted-foreground: oklch(0.65 0 0);
 
   /* Accent: Hover states trên Data Grid */
-  --accent: oklch(0.25 0.04 275);
-  --accent-foreground: oklch(0.85 0.01 275);
+  --accent: oklch(0.21 0 0);
+  --accent-foreground: oklch(0.98 0 0);
 
   /* Cảnh báo / Xóa data */
-  --destructive: oklch(0.6 0.15 15);
-  --border: oklch(0.25 0.04 275); /* Viền cực mảnh, tiệp màu nền */
-  --input: oklch(0.22 0.04 275);
-  --ring: oklch(0.65 0.15 275);
+  --destructive: oklch(0.4 0.15 20);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --border: oklch(0.21 0 0); /* Viền mảnh, tiệp màu nền */
+  --input: oklch(0.21 0 0);
+  --ring: oklch(0.55 0.15 275);
 
   /* Data Type Colors (Tùy chỉnh riêng cho các cột type) */
   --chart-1: oklch(0.7 0.15 300); /* UUID - Neon Purple */
@@ -145,9 +146,14 @@
   --chart-5: oklch(0.65 0.18 45); /* JSONB - Orange */
 
   /* Sidebar */
-  --sidebar: oklch(0.15 0.03 275);
-  --sidebar-foreground: oklch(0.85 0.01 275);
-  --sidebar-border: oklch(0.22 0.04 275);
+  --sidebar: oklch(0.155 0 0);
+  --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.55 0.15 275);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.21 0 0);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
+  --sidebar-border: oklch(0.21 0 0);
+  --sidebar-ring: oklch(0.55 0.15 275);
 }
 
 @layer base {
@@ -175,5 +181,27 @@
   }
   .hide-scrollbar [style*="overflow"]::-webkit-scrollbar {
     display: none !important;
+  }
+
+  /* Custom scrollbar for modern browsers (macOS-like, minimal) */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
   }
 }
