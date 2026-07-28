@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
-import { DownloadSimple } from "@phosphor-icons/react"; // Will use generic Phosphor icons or standard styles
 
 export function AutoUpdater() {
   const hasChecked = useRef(false);
