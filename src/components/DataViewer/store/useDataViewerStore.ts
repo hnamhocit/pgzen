@@ -15,6 +15,9 @@ interface DataViewerState {
   error: string | null;
   setError: (error: string | null) => void;
 
+  foreignKeys: import('@/lib/tauri').ForeignKeyInfo[];
+  setForeignKeys: (fks: import('@/lib/tauri').ForeignKeyInfo[]) => void;
+
   // Filter State
   filterText: string;
   setFilterText: (text: string) => void;
@@ -26,6 +29,12 @@ interface DataViewerState {
   setFilterHistory: (history: string[]) => void;
   selectedIndex: number;
   setSelectedIndex: (index: number | ((prev: number) => number)) => void;
+
+  // Sort State
+  sortColumn: string | null;
+  setSortColumn: (column: string | null) => void;
+  sortDirection: "ASC" | "DESC" | null;
+  setSortDirection: (direction: "ASC" | "DESC" | null) => void;
 
   // Pagination State
   page: number;
@@ -41,6 +50,9 @@ interface DataViewerState {
 
   refreshTrigger: number;
   triggerRefresh: () => void;
+
+  rawQuery: string;
+  setRawQuery: (query: string) => void;
 
   // Selection & Edit State
   selectedRows: Set<number>;
@@ -61,6 +73,11 @@ interface DataViewerState {
   editedData: Record<number, Record<string, any>>;
   setEditedData: (data: Record<number, Record<string, any>> | ((prev: Record<number, Record<string, any>>) => Record<number, Record<string, any>>)) => void;
 
+  history: Array<{ editedData: Record<number, Record<string, any>> }>;
+  historyIndex: number;
+  undo: () => void;
+  redo: () => void;
+
   reset: () => void;
 }
 
@@ -68,6 +85,7 @@ const initialState = {
   activeTab: "data" as const,
   columns: [],
   data: [],
+  foreignKeys: [],
   loading: false,
   error: null,
   
@@ -77,6 +95,9 @@ const initialState = {
   filterHistory: [],
   selectedIndex: 0,
   
+  sortColumn: null,
+  sortDirection: null,
+  
   page: 1,
   pageSize: 100,
   totalRows: null,
@@ -84,6 +105,7 @@ const initialState = {
   pageInput: "1",
 
   refreshTrigger: 0,
+  rawQuery: "",
   
   selectedRows: new Set<number>(),
   isDragging: false,
@@ -94,6 +116,9 @@ const initialState = {
   isStagedDelete: false,
   isStagedEdit: false,
   editedData: {},
+  
+  history: [{ editedData: {} }],
+  historyIndex: 0,
 };
 
 export const useDataViewerStore = create<DataViewerState>((set) => ({
@@ -105,6 +130,7 @@ export const useDataViewerStore = create<DataViewerState>((set) => ({
   setData: (data) => set({ data }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setForeignKeys: (foreignKeys) => set({ foreignKeys }),
   
   setFilterText: (text) => set({ filterText: text }),
   setAppliedFilter: (filter) => set({ appliedFilter: filter }),
@@ -113,6 +139,9 @@ export const useDataViewerStore = create<DataViewerState>((set) => ({
   setSelectedIndex: (index) => set((state) => ({ 
     selectedIndex: typeof index === 'function' ? index(state.selectedIndex) : index 
   })),
+  
+  setSortColumn: (column) => set({ sortColumn: column }),
+  setSortDirection: (direction) => set({ sortDirection: direction }),
   
   setPage: (page) => set((state) => ({
     page: typeof page === 'function' ? page(state.page) : page
@@ -123,6 +152,7 @@ export const useDataViewerStore = create<DataViewerState>((set) => ({
   setPageInput: (input) => set({ pageInput: input }),
 
   triggerRefresh: () => set((state) => ({ refreshTrigger: state.refreshTrigger + 1 })),
+  setRawQuery: (query) => set({ rawQuery: query }),
   
   setSelectedRows: (rows) => set((state) => {
     const newSelection = typeof rows === 'function' ? rows(state.selectedRows) : rows;
@@ -138,9 +168,50 @@ export const useDataViewerStore = create<DataViewerState>((set) => ({
   
   setIsStagedDelete: (isStaged) => set({ isStagedDelete: isStaged }),
   setIsStagedEdit: (isStaged) => set({ isStagedEdit: isStaged }),
-  setEditedData: (data) => set((state) => ({
-    editedData: typeof data === 'function' ? data(state.editedData) : data
-  })),
-
+  setEditedData: (data) => set((state) => {
+    const newEditedData = typeof data === 'function' ? data(state.editedData) : data;
+    
+    // Check if truly changed (shallow check keys for now or stringify)
+    if (JSON.stringify(newEditedData) === JSON.stringify(state.editedData)) {
+      return {};
+    }
+    
+    const newHistory = state.history.slice(0, state.historyIndex + 1);
+    newHistory.push({ editedData: newEditedData });
+    
+    // limit history size to 50
+    if (newHistory.length > 50) {
+      newHistory.shift();
+    }
+    
+    return { 
+      editedData: newEditedData,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+    };
+  }),
+  
+  undo: () => set((state) => {
+    if (state.historyIndex > 0) {
+      const newIndex = state.historyIndex - 1;
+      return {
+        historyIndex: newIndex,
+        editedData: state.history[newIndex].editedData
+      };
+    }
+    return {};
+  }),
+  
+  redo: () => set((state) => {
+    if (state.historyIndex < state.history.length - 1) {
+      const newIndex = state.historyIndex + 1;
+      return {
+        historyIndex: newIndex,
+        editedData: state.history[newIndex].editedData
+      };
+    }
+    return {};
+  }),
+  
   reset: () => set(initialState),
 }));

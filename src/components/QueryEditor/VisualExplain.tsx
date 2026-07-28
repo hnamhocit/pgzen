@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useEffect } from "react";
 import {
   ReactFlow,
   Controls,
@@ -141,8 +141,8 @@ export default function VisualExplain({ plan }: { plan: any }) {
     const { nodes: initialNodes, edges: initialEdges } = parseExplainGraph(rootPlan);
     
     getLayoutedElements(initialNodes, initialEdges).then(({ nodes: layoutedNodes, edges: layoutedEdges }) => {
-      setNodes(layoutedNodes);
-      setEdges(layoutedEdges);
+      setNodes(layoutedNodes as any);
+      setEdges(layoutedEdges as any);
     });
   }, [plan, setNodes, setEdges]);
 

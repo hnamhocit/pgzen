@@ -4,11 +4,20 @@ import Workspace from "./pages/Workspace";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
 import { Toaster } from "@/components/ui/sonner";
+import { CommandPalette } from "@/components/CommandPalette";
+import { VimManager } from "@/components/VimManager";
+import { AutoUpdater } from "@/components/AutoUpdater";
 import "./App.css";
 
+import { useThemeStore } from "./store/useThemeStore";
+import { DEFAULT_THEME_CSS } from "./lib/defaultThemeCss";
+
 function App() {
+  const { customCss } = useThemeStore();
+
   return (
     <>
+      <style id="custom-user-css">{customCss || DEFAULT_THEME_CSS}</style>
       <Routes>
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Workspace />} />
@@ -17,6 +26,9 @@ function App() {
         </Route>
       </Routes>
       <Toaster position="bottom-right" richColors />
+      <CommandPalette />
+      <VimManager />
+      <AutoUpdater />
     </>
   );
 }

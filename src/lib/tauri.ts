@@ -12,6 +12,11 @@ export interface ConnectionConfig {
   password?: string;
   ssl_mode: string;
   application_name?: string;
+  use_ssh?: boolean;
+  ssh_host?: string;
+  ssh_port?: number;
+  ssh_user?: string;
+  ssh_password?: string;
 }
 
 export interface SavedConnection {
@@ -23,6 +28,10 @@ export interface SavedConnection {
   username: string;
   ssl_mode: string;
   application_name?: string;
+  use_ssh?: boolean;
+  ssh_host?: string;
+  ssh_port?: number;
+  ssh_user?: string;
 }
 
 // ─── Commands ──────────────────────────────────────────────────────────────
@@ -80,6 +89,17 @@ export async function listColumns(connectionId: string, database: string, schema
   return invoke<ColumnInfo[]>("list_columns", { connectionId, database, schema, table });
 }
 
+export interface ForeignKeyInfo {
+  column_name: string;
+  foreign_table_schema: string;
+  foreign_table_name: string;
+  foreign_column_name: string;
+}
+
+export async function listForeignKeys(connectionId: string, database: string, schema: string, table: string): Promise<ForeignKeyInfo[]> {
+  return invoke<ForeignKeyInfo[]>("list_foreign_keys", { connectionId, database, schema, table });
+}
+
 export interface SchemaColumnInfo {
   name: string;
   data_type: string;
@@ -106,5 +126,9 @@ export interface SchemaErdData {
 
 export async function getSchemaErdData(connectionId: string, database: string, schema: string): Promise<SchemaErdData> {
   return invoke<SchemaErdData>("get_schema_erd_data", { connectionId, database, schema });
+}
+
+export async function fetchAutocompleteSchema(connectionId: string, database: string): Promise<any> {
+  return invoke<any>("fetch_autocomplete_schema", { connectionId, database });
 }
 

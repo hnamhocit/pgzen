@@ -16,7 +16,12 @@ import {
   PencilSimpleIcon,
   CopyIcon,
   PlugIcon,
+  PlusIcon,
+  UploadSimpleIcon,
+  TerminalWindowIcon,
 } from "@phosphor-icons/react";
+
+import { ImportDataDialog } from "../ImportDataDialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -26,12 +31,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useConnectionStore } from "@/store/useConnectionStore";
 import { useTabStore } from "@/store/useTabStore";
-import {
-  listDatabases,
-  listSchemas,
-  listTables,
-  listColumns,
-} from "@/lib/tauri";
+import { useSearchIndexStore } from "@/store/useSearchIndexStore";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -93,6 +93,8 @@ function TreeNode({
   onViewData,
   onQueryTable,
   onQueryDatabase,
+  onCreateTable,
+  onImportData,
 }: {
   node: NodeApi<DbNode>;
   style: React.CSSProperties;
@@ -104,6 +106,8 @@ function TreeNode({
   onViewData?: (node: DbNode) => void;
   onQueryTable?: (node: DbNode) => void;
   onQueryDatabase?: (node: DbNode) => void;
+  onCreateTable?: (node: DbNode) => void;
+  onImportData?: (node: DbNode) => void;
 }) {
   const getIcon = (type: NodeType, isOpen: boolean, isPk?: boolean) => {
     switch (type) {
@@ -152,11 +156,6 @@ function TreeNode({
         <div
           style={style}
           ref={dragHandle}
-          onClick={() => {
-            if (node.isInternal) {
-              node.toggle();
-            }
-          }}
           onDoubleClick={() => {
             if (node.data.type === "table" && onDoubleClickTable) {
               onDoubleClickTable(node.data);
@@ -168,6 +167,7 @@ function TreeNode({
               ? "bg-accent/80 text-accent-foreground"
               : "hover:bg-accent/50 text-muted-foreground hover:text-foreground",
             node.data.isLoading && "opacity-60 pointer-events-none",
+            node.isFocused && "vim-tree-node-focused"
           )}
         >
           {/* Chevron */}
@@ -178,7 +178,7 @@ function TreeNode({
                 weight="bold"
                 className="animate-spin text-muted-foreground"
               />
-            ) : node.isInternal ? (
+            ) : node.isInternal && node.data.type !== "table" ? (
               <CaretRightIcon
                 size={14}
                 weight="bold"
@@ -268,6 +268,10 @@ function TreeNode({
 
         {node.data.type === "schema" && (
           <>
+            <ContextMenuItem className="gap-2" onClick={() => onCreateTable?.(node.data)}>
+              <PlusIcon size={14} />
+              Create Table
+            </ContextMenuItem>
             <ContextMenuItem className="gap-2" onClick={() => onRefreshNode?.(node.data)}>
               <ArrowClockwiseIcon size={14} />
               Refresh
@@ -277,8 +281,19 @@ function TreeNode({
 
         {node.data.type === "table" && (
           <>
-            <ContextMenuItem className="gap-2" onClick={() => onViewData?.(node.data)}>View Data</ContextMenuItem>
-            <ContextMenuItem className="gap-2" onClick={() => onQueryTable?.(node.data)}>Query Table</ContextMenuItem>
+            <ContextMenuItem className="gap-2" onClick={() => onViewData?.(node.data)}>
+              <TableIcon size={14} />
+              View Data
+            </ContextMenuItem>
+            <ContextMenuItem className="gap-2" onClick={() => onQueryTable?.(node.data)}>
+              <TerminalWindowIcon size={14} />
+              Query Table
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem className="gap-2" onClick={() => onImportData?.(node.data)}>
+              <UploadSimpleIcon size={14} />
+              Import Data
+            </ContextMenuItem>
           </>
         )}
 
@@ -298,8 +313,35 @@ function TreeNode({
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function DatabaseExplorer() {
-  const { connections, loading, refresh, remove } = useConnectionStore();
+  const { connections, loading: connectionsLoading, refresh, remove } = useConnectionStore();
+  const { items: searchItems, isIndexing, hasIndexed, buildIndex } = useSearchIndexStore();
   const { addTab } = useTabStore();
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (connections.length > 0 && !hasIndexed && !isIndexing) {
+      buildIndex(connections);
+    }
+  }, [connections, hasIndexed, isIndexing, buildIndex]);
+
+  const handleCreateTable = useCallback((node: DbNode) => {
+    addTab(`New Table (${node.schema})`, "table_designer", `table_designer_${node.id}_${Date.now()}`, {
+      connectionId: node.connectionId,
+      database: node.database,
+      schema: node.schema,
+    });
+  }, [addTab]);
+
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTableNode, setImportTableNode] = useState<DbNode | null>(null);
+
+  const handleImportData = useCallback((node: DbNode) => {
+    setImportTableNode(node);
+    setImportOpen(true);
+  }, []);
 
   const handleViewData = useCallback((node: DbNode) => {
     addTab(node.name, "data", `data_${node.id}`, {
@@ -329,10 +371,6 @@ export default function DatabaseExplorer() {
     });
   }, [addTab]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const [treeHeight, setTreeHeight] = useState(400);
 
@@ -353,205 +391,89 @@ export default function DatabaseExplorer() {
     return () => window.removeEventListener("resize", updateHeight);
   }, [connections.length]);
 
-  const [expandedData, setExpandedData] = useState<Record<string, DbNode[]>>(
-    {},
-  );
-  const [loadingNodes, setLoadingNodes] = useState<Set<string>>(new Set());
-
-  const buildTreeData = useCallback((): DbNode[] => {
-    const buildNode = (node: DbNode): DbNode => {
-      const children = expandedData[node.id];
-      if (children) {
-        return {
-          ...node,
-          isLoading: loadingNodes.has(node.id),
-          children: children.map(buildNode),
+  const treeData = useCallback((): DbNode[] => {
+    // Build the full tree from searchItems
+    
+    // Create connection nodes
+    const rootNodes: DbNode[] = connections.map(conn => ({
+      id: conn.id,
+      name: conn.name,
+      type: "connection",
+      connectionId: conn.id,
+      database: conn.database,
+      children: []
+    }));
+    
+    const dbMap = new Map<string, DbNode>();
+    const schemaMap = new Map<string, DbNode>();
+    
+    for (const item of searchItems) {
+      if (item.type === "database") {
+        const dbNode: DbNode = {
+          id: item.id,
+          name: item.database,
+          type: "database",
+          connectionId: item.connectionId,
+          database: item.database,
+          children: []
         };
+        dbMap.set(item.id, dbNode);
+        const conn = rootNodes.find(c => c.id === item.connectionId);
+        if (conn && conn.children) conn.children.push(dbNode);
       }
-      return {
-        ...node,
-        isLoading: loadingNodes.has(node.id),
-      };
-    };
-
-    return connections.map((conn) =>
-      buildNode({
-        id: conn.id,
-        name: conn.name,
-        type: "connection",
-        connectionId: conn.id,
-        database: conn.database, // Current selected DB for this connection
-        children: expandedData[conn.id] ? undefined : [], // trigger lazy load marker
-      }),
-    );
-  }, [connections, expandedData, loadingNodes]);
-
-  const handleLazyLoad = useCallback(
-    async (node: DbNode, force: boolean = false) => {
-      const nodeId = node.id;
-      console.log("[Explorer] Attempting lazy load on node:", {
-        id: nodeId,
-        type: node.type,
-        connectionId: node.connectionId,
-        database: node.database,
-        schema: node.schema,
-        table: node.table,
-      });
-
-      if (!force && (expandedData[nodeId] || loadingNodes.has(nodeId))) {
-        console.log(
-          "[Explorer] Node already loaded or currently loading. Skipping.",
-        );
-        return;
+    }
+    
+    for (const item of searchItems) {
+      if (item.type === "schema") {
+        const schemaNode: DbNode = {
+          id: item.id,
+          name: item.schema,
+          type: "schema",
+          connectionId: item.connectionId,
+          database: item.database,
+          schema: item.schema,
+          children: []
+        };
+        schemaMap.set(item.id, schemaNode);
+        const dbId = `db_${item.connectionId}_${item.database}`;
+        const db = dbMap.get(dbId);
+        if (db && db.children) db.children.push(schemaNode);
       }
-
-      setLoadingNodes((prev) => new Set(prev).add(nodeId));
-
-      try {
-        let newChildren: DbNode[] = [];
-
-        if (node.type === "connection" && node.connectionId) {
-          console.log(
-            "[Explorer] Fetching databases for connection:",
-            node.connectionId,
-          );
-          const databases = await listDatabases(node.connectionId);
-          console.log("[Explorer] Databases fetched:", databases);
-          newChildren = databases.map((db) => ({
-            id: `${node.connectionId}-db-${db}`,
-            name: db,
-            type: "database",
-            connectionId: node.connectionId,
-            database: db,
-            children: [], // expandable
-          }));
-        } else if (
-          node.type === "database" &&
-          node.connectionId &&
-          node.database
-        ) {
-          console.log(
-            "[Explorer] Fetching schemas for connection/db:",
-            node.connectionId,
-            node.database,
-          );
-          const schemas = await listSchemas(node.connectionId, node.database);
-          console.log("[Explorer] Schemas fetched:", schemas);
-          newChildren = schemas.map((schema) => ({
-            id: `${node.connectionId}-db-${node.database}-schema-${schema}`,
-            name: schema,
-            type: "schema",
-            connectionId: node.connectionId,
-            database: node.database,
-            schema: schema,
-            children: [], // expandable
-          }));
-        } else if (
-          node.type === "schema" &&
-          node.connectionId &&
-          node.database &&
-          node.schema
-        ) {
-          console.log("[Explorer] Fetching tables for schema:", {
-            connectionId: node.connectionId,
-            database: node.database,
-            schema: node.schema,
-          });
-          const tables = await listTables(
-            node.connectionId,
-            node.database,
-            node.schema,
-          );
-          console.log("[Explorer] Tables fetched:", tables);
-          newChildren = tables.map((table) => ({
-            id: `${node.connectionId}-db-${node.database}-schema-${node.schema}-table-${table}`,
-            name: table,
-            type: "table",
-            connectionId: node.connectionId,
-            database: node.database,
-            schema: node.schema,
-            table: table,
-            children: [], // expandable
-          }));
-        } else if (
-          node.type === "table" &&
-          node.connectionId &&
-          node.database &&
-          node.schema &&
-          node.table
-        ) {
-          console.log("[Explorer] Fetching columns for table:", {
-            connectionId: node.connectionId,
-            database: node.database,
-            schema: node.schema,
-            table: node.table,
-          });
-          const columns = await listColumns(
-            node.connectionId,
-            node.database,
-            node.schema,
-            node.table,
-          );
-          console.log("[Explorer] Columns fetched:", columns);
-          newChildren = columns.map((col) => ({
-            id: `${node.connectionId}-col-${node.database}-${node.schema}-${node.table}-${col.name}`,
-            name: `${col.name} (${col.data_type})`,
-            type: "column",
-            isPk: col.is_primary_key,
-          }));
-        } else {
-          console.warn(
-            "[Explorer] Node did not match any loader criteria:",
-            node,
-          );
-        }
-
-        console.log(
-          `[Explorer] Setting children for node ${nodeId}:`,
-          newChildren,
-        );
-        setExpandedData((prev) => ({ ...prev, [nodeId]: newChildren }));
-      } catch (err) {
-        console.error("[Explorer] Failed to lazy load node", nodeId, err);
-        import("sonner").then((m) =>
-          m.toast.error(`Failed to load data: ${String(err)}`),
-        );
-      } finally {
-        setLoadingNodes((prev) => {
-          const next = new Set(prev);
-          next.delete(nodeId);
-          return next;
-        });
+    }
+    
+    for (const item of searchItems) {
+      if (item.type === "table") {
+        const tableNode: DbNode = {
+          id: item.id,
+          name: item.table,
+          type: "table",
+          connectionId: item.connectionId,
+          database: item.database,
+          schema: item.schema,
+          table: item.table,
+        };
+        const schemaId = `schema_${item.connectionId}_${item.database}_${item.schema}`;
+        const schema = schemaMap.get(schemaId);
+        if (schema && schema.children) schema.children.push(tableNode);
       }
-    },
-    [expandedData, loadingNodes],
-  );
-
-  const treeData = buildTreeData();
-
-  const findNodeDeep = useCallback(
-    (nodes: DbNode[], id: string): DbNode | undefined => {
-      for (const node of nodes) {
-        if (node.id === id) return node;
-        if (node.children) {
-          const found = findNodeDeep(node.children, id);
-          if (found) return found;
-        }
-      }
-      return undefined;
-    },
-    [],
-  );
+    }
+    
+    return rootNodes;
+  }, [connections, searchItems])();
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (loading) {
+  if (connectionsLoading || isIndexing) {
     return (
-      <div className="h-full p-2">
+      <div className="h-full p-2 flex flex-col gap-1">
         <SkeletonRow width="70%" />
         <SkeletonRow width="50%" />
         <SkeletonRow width="60%" />
         <SkeletonRow width="40%" />
+        <div className="text-xs text-muted-foreground mt-4 text-center px-4">
+          <CircleNotchIcon className="animate-spin mx-auto mb-2 text-primary" size={24} />
+          Fetching complete schema for fast search and offline support...
+        </div>
       </div>
     );
   }
@@ -569,10 +491,18 @@ export default function DatabaseExplorer() {
         rowHeight={32}
         indent={14}
         openByDefault={false}
-        onToggle={(id) => {
-          const node = findNodeDeep(treeData, id);
-          if (node) {
-            handleLazyLoad(node);
+        onActivate={(node) => {
+          if (node.isInternal) {
+            node.toggle();
+          } else if (node.data.type === "table") {
+            const nodeData = node.data;
+            const tableId = `table_${nodeData.connectionId}_${nodeData.database}_${nodeData.schema}_${nodeData.table}`;
+            addTab(nodeData.table || "table", "data", tableId, {
+              connectionId: nodeData.connectionId,
+              database: nodeData.database,
+              schema: nodeData.schema,
+              table: nodeData.table,
+            });
           }
         }}
       >
@@ -581,10 +511,12 @@ export default function DatabaseExplorer() {
             {...props}
             onDelete={(id) => remove(id)}
             onRefresh={refresh}
-            onRefreshNode={(node) => handleLazyLoad(node, true)}
+            onRefreshNode={() => buildIndex(connections)}
             onViewData={handleViewData}
             onQueryTable={handleQueryTable}
             onQueryDatabase={handleQueryDatabase}
+            onCreateTable={handleCreateTable}
+            onImportData={handleImportData}
             onDoubleClickTable={(nodeData) => {
               const tableId = `table_${nodeData.connectionId}_${nodeData.database}_${nodeData.schema}_${nodeData.table}`;
               addTab(nodeData.table || "table", "data", tableId, {
@@ -597,6 +529,22 @@ export default function DatabaseExplorer() {
           />
         )}
       </Tree>
+
+
+
+      {importTableNode && (
+        <ImportDataDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          connectionId={importTableNode.connectionId}
+          database={importTableNode.database}
+          schema={importTableNode.schema}
+          table={importTableNode.table}
+          onSuccess={() => {
+            // Trigger refresh if tab is open
+          }}
+        />
+      )}
     </div>
   );
 }

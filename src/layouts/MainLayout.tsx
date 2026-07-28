@@ -4,12 +4,22 @@ import DatabaseExplorer from "@/components/DatabaseExplorer";
 import Header from "@/components/Header";
 import { PlugsConnectedIcon } from "@phosphor-icons/react";
 import ConnectionDialog from "@/components/ConnectionDialog";
+import { useVimStore } from "@/store/useVimStore";
+import { cn } from "@/lib/utils";
 
 export default function MainLayout() {
+  const { enabled, mode, activePane } = useVimStore();
+
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className={cn(
+      "flex h-screen bg-background text-foreground overflow-hidden",
+      enabled && (mode === "NORMAL" ? "vim-mode-normal" : "vim-mode-insert"),
+      enabled && `vim-pane-${activePane.toLowerCase()}`
+    )}>
       {/* ── Sidebar ─────────────────────────────────────────────── */}
-      <div className="shrink-0 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col">
+      <div className={cn(
+        "shrink-0 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-all duration-200 vim-ignore"
+      )}>
         {/* Logo + New Connection */}
         <div className="border-b border-border p-4 shrink-0">
           <Link to="/" className="flex items-center gap-1 mb-4 hover:opacity-80 transition-opacity">
@@ -41,14 +51,32 @@ export default function MainLayout() {
       </div>
 
       {/* ── Main Workspace ──────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        <Header />
+      <div className={cn(
+        "flex-1 flex flex-col min-w-0 h-full relative transition-all duration-200"
+      )}>
+        <div className="z-20">
+          <Header />
+        </div>
 
         {/* Workspace Area */}
         <div className="flex-1 overflow-hidden relative bg-muted/10">
           <Outlet />
         </div>
       </div>
+
+      {/* Vim Status Bar */}
+      {enabled && (
+        <div className={cn(
+          "fixed bottom-0 left-0 w-full backdrop-blur text-white text-xs font-mono font-bold px-4 py-1 z-50 flex items-center gap-4 shadow-[0_-4px_10px_rgba(0,0,0,0.5)] transition-colors",
+          mode === "NORMAL" ? "bg-emerald-600/90" : "bg-blue-600/90"
+        )}>
+          <span className="uppercase tracking-wider">-- {mode} --</span>
+          <span className="opacity-70">{activePane}</span>
+          <span className="ml-auto opacity-70 font-normal tracking-wide">
+            {mode === "NORMAL" ? "Press 'i' to INSERT, 'h,j,k,l' to move" : "Press 'Esc' to exit INSERT mode"}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

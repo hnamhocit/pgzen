@@ -1,3 +1,5 @@
+import { getPostgresTypeFamily, normalizePostgresType } from "./postgresTypes";
+
 export type Language = "rust" | "typescript" | "ruby" | "csharp" | "dart" | "python" | "java";
 
 interface ColumnInfo {
@@ -6,88 +8,90 @@ interface ColumnInfo {
 }
 
 function getTsType(sqlType: string): string {
-  if (!sqlType) return "any";
-  const t = sqlType.toLowerCase();
-  if (t.includes("int") || t.includes("numeric") || t.includes("real") || t.includes("float") || t.includes("decimal")) return "number";
-  if (t.includes("bool")) return "boolean";
-  if (t.includes("json")) return "any";
-  if (t.includes("date") || t.includes("time") || t.includes("interval")) return "Date | string";
+  const family = getPostgresTypeFamily(normalizePostgresType(sqlType));
+  if (family === "numeric") return "number";
+  if (family === "boolean") return "boolean";
+  if (family === "json") return "any";
+  if (family === "date") return "Date | string";
   return "string";
 }
 
 function getRustType(sqlType: string): string {
   if (!sqlType) return "String";
-  const t = sqlType.toLowerCase();
-  if (t.includes("smallint")) return "i16";
-  if (t.includes("integer") || t.includes("int4")) return "i32";
-  if (t.includes("bigint") || t.includes("int8")) return "i64";
-  if (t.includes("real") || t.includes("float4")) return "f32";
-  if (t.includes("double precision") || t.includes("float8") || t.includes("numeric") || t.includes("decimal")) return "f64";
-  if (t.includes("bool")) return "bool";
-  if (t.includes("json")) return "serde_json::Value";
-  if (t.includes("uuid")) return "uuid::Uuid";
-  if (t.includes("date") || t.includes("timestamp")) return "chrono::NaiveDateTime";
-  return "String";
-}
-
-function getRubyType(sqlType: string): string {
-  if (!sqlType) return "String";
-  const t = sqlType.toLowerCase();
-  if (t.includes("int")) return "Integer";
-  if (t.includes("numeric") || t.includes("real") || t.includes("float") || t.includes("decimal")) return "Float";
-  if (t.includes("bool")) return "Boolean";
-  if (t.includes("json")) return "Hash";
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return "Time";
+  const t = normalizePostgresType(sqlType);
+  const family = getPostgresTypeFamily(t);
+  
+  if (t === "smallint") return "i16";
+  if (t === "integer" || t === "int") return "i32";
+  if (t === "bigint") return "i64";
+  if (t === "real") return "f32";
+  if (t === "double precision" || t === "numeric") return "f64";
+  
+  if (family === "boolean") return "bool";
+  if (family === "json") return "serde_json::Value";
+  if (family === "uuid") return "uuid::Uuid";
+  if (family === "date") return "chrono::NaiveDateTime";
   return "String";
 }
 
 function getCSharpType(sqlType: string): string {
   if (!sqlType) return "string";
-  const t = sqlType.toLowerCase();
-  if (t.includes("smallint")) return "short";
-  if (t.includes("integer") || t.includes("int4")) return "int";
-  if (t.includes("bigint") || t.includes("int8")) return "long";
-  if (t.includes("real") || t.includes("float4")) return "float";
-  if (t.includes("double precision") || t.includes("float8") || t.includes("numeric") || t.includes("decimal")) return "double";
-  if (t.includes("bool")) return "bool";
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return "DateTime";
-  if (t.includes("uuid")) return "Guid";
+  const t = normalizePostgresType(sqlType);
+  const family = getPostgresTypeFamily(t);
+  
+  if (t === "smallint") return "short";
+  if (t === "integer" || t === "int") return "int";
+  if (t === "bigint") return "long";
+  if (t === "real") return "float";
+  if (t === "double precision" || t === "numeric") return "double";
+  
+  if (family === "boolean") return "bool";
+  if (family === "date") return "DateTime";
+  if (family === "uuid") return "Guid";
   return "string";
 }
 
 function getDartType(sqlType: string): string {
-  if (!sqlType) return "String";
-  const t = sqlType.toLowerCase();
-  if (t.includes("int")) return "int";
-  if (t.includes("numeric") || t.includes("real") || t.includes("float") || t.includes("decimal")) return "double";
-  if (t.includes("bool")) return "bool";
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return "DateTime";
-  if (t.includes("json")) return "Map<String, dynamic>";
+  const t = normalizePostgresType(sqlType);
+  const family = getPostgresTypeFamily(t);
+  
+  if (t === "integer" || t === "int" || t === "bigint" || t === "smallint") return "int";
+  if (family === "numeric") return "double";
+  if (family === "boolean") return "bool";
+  if (family === "date") return "DateTime";
+  if (family === "json") return "Map<String, dynamic>";
   return "String";
 }
 
 function getPythonType(sqlType: string): string {
-  if (!sqlType) return "str";
-  const t = sqlType.toLowerCase();
-  if (t.includes("int")) return "int";
-  if (t.includes("numeric") || t.includes("real") || t.includes("float") || t.includes("decimal")) return "float";
-  if (t.includes("bool")) return "bool";
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return "datetime.datetime";
-  if (t.includes("json")) return "dict";
+  const family = getPostgresTypeFamily(normalizePostgresType(sqlType));
+  if (family === "numeric") {
+    const t = normalizePostgresType(sqlType);
+    if (t === "real" || t === "double precision" || t === "numeric") return "float";
+    return "int";
+  }
+  if (family === "boolean") return "bool";
+  if (family === "date") return "datetime";
+  if (family === "json") return "dict";
+  if (family === "uuid") return "UUID";
   return "str";
 }
 
 function getJavaType(sqlType: string): string {
-  if (!sqlType) return "String";
-  const t = sqlType.toLowerCase();
-  if (t.includes("smallint")) return "Short";
-  if (t.includes("integer") || t.includes("int4")) return "Integer";
-  if (t.includes("bigint") || t.includes("int8")) return "Long";
-  if (t.includes("real") || t.includes("float4")) return "Float";
-  if (t.includes("double precision") || t.includes("float8") || t.includes("numeric") || t.includes("decimal")) return "Double";
-  if (t.includes("bool")) return "Boolean";
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return "java.time.LocalDateTime";
-  if (t.includes("uuid")) return "java.util.UUID";
+  const t = normalizePostgresType(sqlType);
+  const family = getPostgresTypeFamily(t);
+  
+  if (t === "smallint") return "Short";
+  if (t === "integer" || t === "int") return "Integer";
+  if (t === "bigint") return "Long";
+  if (t === "real") return "Float";
+  if (t === "double precision" || t === "numeric") return "Double";
+  
+  if (family === "boolean") return "Boolean";
+  if (family === "date") return "LocalDateTime";
+  if (family === "uuid") return "UUID";
+  if (family === "json") return "Object"; // or JsonNode
+  
   return "String";
 }
 

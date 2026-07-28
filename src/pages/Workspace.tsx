@@ -1,7 +1,7 @@
 import { useTabStore } from "@/store/useTabStore";
 import DataViewer from "@/components/DataViewer";
 import QueryEditor from "@/components/QueryEditor";
-
+import { TableDesigner } from "@/components/TableDesigner";
 export default function Workspace() {
   const { tabs, activeTab } = useTabStore();
   const currentTab = tabs.find((t) => t.id === activeTab);
@@ -12,6 +12,10 @@ export default function Workspace() {
 
   if (currentTab?.type === "sql") {
     return <QueryEditor tab={currentTab} />;
+  }
+
+  if (currentTab?.type === "table_designer") {
+    return <TableDesigner tab={currentTab} />;
   }
 
   return (

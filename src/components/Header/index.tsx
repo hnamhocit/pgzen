@@ -1,4 +1,3 @@
-import { GlobalSearch } from "./GlobalSearch";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
   XIcon,
@@ -48,9 +47,9 @@ export default function Header() {
   const hiddenTabs = tabs.slice(MAX_VISIBLE);
 
   return (
-    <div className="h-14 border-b bg-background border-border flex items-center justify-between w-full shadow-sm overflow-hidden">
+    <div data-tauri-drag-region className="h-14 border-b bg-background border-border flex items-center justify-between w-full shadow-sm overflow-hidden">
       {/* Tab List Container or Back Button */}
-      <div className="flex-1 min-w-0 h-full flex">
+      <div className="flex-1 min-w-0 h-full flex vim-ignore">
         {isMainWorkspace ? (
           <>
             <Reorder.Group
@@ -226,10 +225,6 @@ export default function Header() {
 
       {/* Utilities (Fixed right) */}
       <div className="flex items-center gap-2 shrink-0 pl-4 pr-4 z-10">
-        <GlobalSearch />
-        
-        <div className="w-px h-5 bg-border mx-2"></div>
-        
         <button 
           onClick={() => navigate("/help")}
           className="text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors flex items-center justify-center outline-none"

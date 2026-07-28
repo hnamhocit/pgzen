@@ -3,10 +3,18 @@ import { TabDoc, useTabStore } from "@/store/useTabStore";
 import { useConnectionStore } from "@/store/useConnectionStore";
 import { invoke } from "@tauri-apps/api/core";
 import CodeMirror from "@uiw/react-codemirror";
+import { EditorView } from "@codemirror/view";
 import { sql, PostgreSQL } from "@codemirror/lang-sql";
-import { json } from "@codemirror/lang-json";
 import { tokyoNight } from "@uiw/codemirror-theme-tokyo-night";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   PlayIcon,
   FastForwardIcon,
@@ -19,12 +27,16 @@ import {
   TrashIcon,
   ClockCounterClockwiseIcon,
   DotsSix as DotsSixIcon,
+  BookmarkSimpleIcon,
+  FloppyDiskIcon,
 } from "@phosphor-icons/react";
 import { faker } from "@faker-js/faker";
 import { toast } from "sonner";
 import { format as formatSqlString } from "sql-formatter";
 import { cn } from "@/lib/utils";
 import VisualExplain from "./VisualExplain";
+import { useSnippetStore, SqlSnippet } from "@/store/useSnippetStore";
+import { getColumnColor } from "../DataViewer/utils";
 
 function processFakerTemplates(query: string): string {
   return query.replace(
@@ -130,65 +142,39 @@ function QueryHistoryItem({ item, onLoad }: { item: any; onLoad: () => void }) {
   );
 }
 
-function getColumnColor(type: string) {
-  const t = type.toLowerCase();
-  // Numeric
-  if (
-    [
-      "decimal",
-      "numeric",
-      "real",
-      "double precision",
-      "float8",
-      "float4",
-      "smallint",
-      "integer",
-      "bigint",
-      "int",
-      "int2",
-      "int4",
-      "int8",
-    ].includes(t)
-  ) {
-    return {
-      bg: "text-amber-600 dark:text-amber-500 bg-amber-500/10",
-      text: "text-amber-700 dark:text-amber-400 font-medium",
-    };
-  }
-  // String
-  if (
-    ["character varying", "varchar", "character", "char", "text"].includes(t)
-  ) {
-    return {
-      bg: "text-emerald-600 dark:text-emerald-500 bg-emerald-500/10",
-      text: "text-emerald-700 dark:text-emerald-500",
-    };
-  }
-  // Boolean
-  if (["boolean", "bool"].includes(t)) {
-    return {
-      bg: "text-blue-600 dark:text-blue-500 bg-blue-500/10",
-      text: "text-blue-700 dark:text-blue-400 font-medium",
-    };
-  }
-  // Date/Time
-  if (
-    t.includes("date") ||
-    t.includes("time") ||
-    t.includes("interval") ||
-    t.includes("timestamp")
-  ) {
-    return {
-      bg: "text-purple-600 dark:text-purple-500 bg-purple-500/10",
-      text: "text-purple-700 dark:text-purple-400",
-    };
-  }
-  // JSON / Arrays / Others
-  return {
-    bg: "text-muted-foreground bg-accent",
-    text: "text-foreground",
-  };
+function SnippetItem({ item, onLoad, onRemove }: { item: SqlSnippet; onLoad: () => void; onRemove: () => void }) {
+  return (
+    <div className="p-3 rounded-md text-xs font-mono border bg-muted/20 border-border hover:border-primary/50 hover:bg-muted/40 transition-colors group relative">
+      <div className="flex items-center justify-between mb-2 opacity-80 text-foreground">
+        <span className="font-semibold text-primary">{item.name}</span>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 w-5 p-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={onRemove}
+            title="Delete snippet"
+          >
+            <TrashIcon size={12} />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-5 px-2 py-0 text-[10px] border-primary/20 hover:bg-primary/10 text-primary"
+            onClick={onLoad}
+          >
+            Load
+          </Button>
+        </div>
+      </div>
+      <div className="opacity-70 truncate" title={item.query}>
+        {item.query}
+      </div>
+    </div>
+  );
 }
+
+
 
 export default function QueryEditor({ tab }: { tab: TabDoc }) {
   const { updateTabQuery, clearDirty, addTabHistory, clearTabHistory } =
@@ -216,6 +202,19 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
   const [queryPlan, setQueryPlan] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<"results" | "plan">("results");
   const [lastExecutedQuery, setLastExecutedQuery] = useState("");
+  const [selectedText, setSelectedText] = useState("");
+  
+  const { snippets, addSnippet, removeSnippet } = useSnippetStore();
+  const [saveSnippetName, setSaveSnippetName] = useState("");
+  const [isSaveSnippetOpen, setIsSaveSnippetOpen] = useState(false);
+
+  const updateListener = EditorView.updateListener.of((update) => {
+    if (update.selectionSet || update.docChanged) {
+      const sel = update.state.selection.main;
+      const text = update.state.sliceDoc(sel.from, sel.to);
+      setSelectedText(text);
+    }
+  });
 
   // History State
   const history = tab.history || [];
@@ -313,9 +312,9 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
     setRowsAffected(null);
     setQueryPlan(null);
 
-    let finalQuery = query;
+    let finalQuery = selectedText.trim() ? selectedText : query;
     try {
-      finalQuery = processFakerTemplates(query);
+      finalQuery = processFakerTemplates(finalQuery);
       finalQuery = processQueryLimits(finalQuery);
 
       const t0 = performance.now();
@@ -393,14 +392,14 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
     setRowsAffected(null);
     setQueryPlan(null);
 
-    let finalQuery = query;
+    let finalQuery = selectedText.trim() ? selectedText : query;
     try {
       if (sessionId) {
         await invoke("rollback_session", { sessionId });
         setSessionId(null);
       }
 
-      finalQuery = processFakerTemplates(query);
+      finalQuery = processFakerTemplates(finalQuery);
       finalQuery = processQueryLimits(finalQuery);
 
       const isExplain = stripSqlComments(finalQuery).toUpperCase().startsWith("EXPLAIN");
@@ -495,12 +494,12 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
 
   return (
     <div
-      className="flex flex-row h-full w-full overflow-hidden bg-background outline-none"
+      className="flex flex-col h-full w-full overflow-hidden bg-background outline-none"
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >
-      {/* LEFT PANE: Editor (70%) + Results */}
-      <div className="w-[70%] flex flex-col border-r border-border h-full shrink-0">
+      {/* Editor & Results Pane (100%) */}
+      <div className="w-full flex flex-col h-full shrink-0">
         <div className="flex items-center gap-2 p-2 border-b border-border bg-muted/30 shrink-0">
           <Button
             size="sm"
@@ -532,7 +531,14 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
           )}
 
           <div className="flex-1" />
-          <div className="flex items-center gap-2 mr-4 text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded max-w-[200px] sm:max-w-[300px]">
+          
+          {executionTime !== null && (
+            <div className="text-xs font-mono text-muted-foreground mr-2 flex items-center gap-1">
+              <ClockIcon /> {executionTime.toFixed(1)} ms
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 mr-2 text-xs font-mono text-muted-foreground bg-muted px-2 py-1 rounded max-w-[200px] sm:max-w-[300px]">
             <DatabaseIcon weight="fill" className="text-primary/70 shrink-0" />
             <span className="truncate" title={connName}>
               {connName}
@@ -542,12 +548,175 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
               {tab.database || "default"}
             </span>
           </div>
+
+          <Dialog>
+            <DialogTrigger>
+              <div className="h-8 w-8 p-0 inline-flex items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer text-muted-foreground" title="Saved Snippets">
+                <BookmarkSimpleIcon size={18} />
+              </div>
+            </DialogTrigger>
+            <DialogContent className="max-w-xl max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Saved Snippets</DialogTitle>
+              </DialogHeader>
+              <div className="flex-1 overflow-auto space-y-3 pr-2 mt-4 custom-scrollbar">
+                {snippets.length > 0 ? (
+                  snippets.slice().reverse().map((item) => (
+                    <SnippetItem 
+                      key={item.id} 
+                      item={item} 
+                      onLoad={() => {
+                        handleQueryChange(item.query);
+                        toast.success("Snippet loaded");
+                      }}
+                      onRemove={() => {
+                        removeSnippet(item.id);
+                        toast.success("Snippet deleted");
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center mt-6 py-12">
+                    No snippets saved yet. Select text or write a query and click "Save Snippet".
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isSaveSnippetOpen} onOpenChange={setIsSaveSnippetOpen}>
+            <DialogTrigger 
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8 p-0 ml-1 text-muted-foreground"
+              title="Save current query as Snippet"
+              onClick={() => setSaveSnippetName("")}
+            >
+              <FloppyDiskIcon size={18} />
+            </DialogTrigger>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Save Snippet</DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Snippet Name</label>
+                  <Input 
+                    placeholder="e.g. Monthly Revenue Report" 
+                    value={saveSnippetName}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSaveSnippetName(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="text-xs text-muted-foreground bg-muted p-2 rounded truncate">
+                  {selectedText.trim() ? selectedText : query}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setIsSaveSnippetOpen(false)}>Cancel</Button>
+                <Button 
+                  onClick={() => {
+                    const q = selectedText.trim() ? selectedText : query;
+                    if (!q.trim()) {
+                      toast.error("Query is empty");
+                      return;
+                    }
+                    if (!saveSnippetName.trim()) {
+                      toast.error("Please enter a name");
+                      return;
+                    }
+                    addSnippet(saveSnippetName.trim(), q);
+                    setIsSaveSnippetOpen(false);
+                    toast.success("Snippet saved");
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog>
+            <DialogTrigger>
+              <div className="h-8 w-8 p-0 inline-flex items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer text-muted-foreground" title="Query History">
+                <ClockCounterClockwiseIcon size={18} />
+              </div>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+              <DialogHeader className="flex flex-row items-center justify-between">
+                <DialogTitle>Query History</DialogTitle>
+                {history.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => clearTabHistory(tab.id)}
+                  >
+                    <TrashIcon className="mr-1" /> Clear All
+                  </Button>
+                )}
+              </DialogHeader>
+              <div className="flex-1 overflow-auto space-y-3 pr-2 mt-4 custom-scrollbar">
+                {history.length > 0 ? (
+                  history.slice().reverse().map((item, i) => (
+                    <QueryHistoryItem 
+                      key={i} 
+                      item={item} 
+                      onLoad={() => {
+                        handleQueryChange(item.query);
+                        toast.success("Query loaded from history");
+                      }} 
+                    />
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center mt-6 py-12">
+                    No queries executed yet in this tab.
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
           {tab.isDirty && (
             <div className="text-xs text-muted-foreground mr-2 font-medium flex items-center gap-1 shrink-0">
               Unsaved (Ctrl+S)
             </div>
           )}
         </div>
+
+        {/* Pending Transaction Banner */}
+        {sessionId && (
+          <div className="p-2 border-b border-amber-500/20 bg-amber-500/10 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="font-semibold text-amber-700 dark:text-amber-500 flex items-center gap-2 text-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                Pending Transaction
+              </div>
+              <span className="text-xs text-amber-700/80 dark:text-amber-500/80">
+                You have uncommitted changes.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={handleCommit}
+                disabled={loading}
+              >
+                <CheckCircleIcon size={14} className="mr-1" /> Commit
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-destructive text-destructive hover:bg-destructive/10"
+                onClick={handleRollback}
+                disabled={loading}
+              >
+                <XCircleIcon size={14} className="mr-1" /> Rollback
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Editor */}
         <div className="flex-1 overflow-auto border-b border-border text-base relative">
@@ -561,6 +730,7 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                 upperCaseKeywords: true,
                 schema: dbSchema,
               }),
+              updateListener,
             ]}
             onChange={handleQueryChange}
             style={{ fontSize: "18px" }}
@@ -632,14 +802,15 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                                   <div className="flex items-center gap-2">
                                     <span>{c.name}</span>
                                     {c.data_type && (
-                                      <span
-                                        className={cn(
-                                          "text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider shrink-0 ml-auto",
-                                          getColumnColor(c.data_type).bg,
-                                        )}
-                                      >
-                                        {c.data_type}
-                                      </span>
+                                        <span
+                                          className="text-[10px] px-1.5 py-0.5 rounded font-medium border border-border tracking-wide uppercase"
+                                          style={{
+                                            backgroundColor: `color-mix(in srgb, ${getColumnColor(c.data_type)} 15%, transparent)`,
+                                            color: getColumnColor(c.data_type)
+                                          }}
+                                        >
+                                          {c.data_type}
+                                        </span>
                                     )}
                                   </div>
                                 </th>
@@ -660,19 +831,22 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                                   return (
                                     <td
                                       key={c.name}
-                                      className={cn(
-                                        "px-4 py-2 font-mono truncate max-w-[300px] border-b border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 transition-colors",
-                                        c.data_type
-                                          ? getColumnColor(c.data_type).text
-                                          : "text-muted-foreground",
-                                      )}
+                                      className="font-mono text-[13px] break-words whitespace-pre-wrap max-h-[300px] overflow-auto border-b border-r border-gray-100 dark:border-gray-800/50 last:border-r-0 transition-colors"
+                                      style={{ color: val === null ? "inherit" : getColumnColor(c.data_type) }}
                                     >
                                       {val === null || val === undefined ? (
                                         <span className="italic opacity-50">
                                           null
                                         </span>
+                                      ) : typeof val === "boolean" ? (
+                                        val ? "true" : "false"
                                       ) : typeof val === "object" ? (
-                                        JSON.stringify(val)
+                                        <div className="flex items-center gap-1.5 opacity-80" title={JSON.stringify(val)}>
+                                          <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 font-bold text-[9px] px-1 py-0.5 rounded-sm uppercase tracking-wider">JSON</span>
+                                          <span className="truncate max-w-[200px]">{JSON.stringify(val)}</span>
+                                        </div>
+                                      ) : (c.data_type?.toLowerCase() === "bool" || c.data_type?.toLowerCase() === "boolean") && typeof val === "string" ? (
+                                        val === "t" || val === "true" ? "true" : val === "f" || val === "false" ? "false" : String(val)
                                       ) : (
                                         String(val)
                                       )}
@@ -714,89 +888,6 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
             </div>
           </>
         )}
-      </div>
-
-      {/* RIGHT PANE: Execution Info & Transaction State (30%) */}
-      <div className="w-[30%] flex flex-col bg-muted/10 shrink-0">
-        <div className="p-4 border-b border-border bg-background">
-          <h3 className="font-semibold mb-1 flex items-center gap-2">
-            Execution State
-          </h3>
-          <div className="text-sm text-muted-foreground flex items-center gap-2">
-            <ClockIcon />
-            {executionTime !== null ? `${executionTime.toFixed(1)} ms` : "-"}
-          </div>
-        </div>
-
-        <div className="p-4 flex-1 flex flex-col min-h-0 overflow-hidden">
-          {sessionId ? (
-            <div className="p-4 rounded-lg border border-amber-500/20 bg-amber-500/10 shadow-sm shrink-0 mb-4">
-              <div className="font-semibold text-amber-700 dark:text-amber-500 mb-2 flex items-center gap-2">
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
-                </span>
-                Pending Transaction
-              </div>
-              <p className="text-sm text-amber-700/80 dark:text-amber-500/80 mb-4">
-                You have uncommitted changes in your session. They are currently
-                locked.
-              </p>
-              <div className="flex flex-col gap-2">
-                <Button
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                  onClick={handleCommit}
-                  disabled={loading}
-                >
-                  <CheckCircleIcon size={18} className="mr-2" /> Commit Changes
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full border-destructive text-destructive hover:bg-destructive/10"
-                  onClick={handleRollback}
-                  disabled={loading}
-                >
-                  <XCircleIcon size={18} className="mr-2" /> Rollback
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex-1 min-h-0"></div>
-          {/* Query History */}
-          <div className="flex items-center justify-between mt-4 mb-3 shrink-0 pt-4 border-t border-border">
-            <h3 className="font-semibold flex items-center gap-2">
-              <ClockCounterClockwiseIcon /> Query History
-            </h3>
-            {history.length > 0 && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                onClick={() => clearTabHistory(tab.id)}
-                title="Clear History"
-              >
-                <TrashIcon />
-              </Button>
-            )}
-          </div>
-
-          <div className="max-h-[300px] overflow-auto space-y-3 pr-2 shrink-0">
-            {history.length > 0 ? (
-              history.map((item, i) => (
-                <QueryHistoryItem 
-                  key={i} 
-                  item={item} 
-                  onLoad={() => handleQueryChange(item.query)} 
-                />
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground text-center mt-6">
-                No queries executed yet.
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );

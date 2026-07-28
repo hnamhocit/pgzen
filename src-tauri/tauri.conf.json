@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hndb",
+  "productName": "PgZen",
   "version": "0.1.0",
-  "identifier": "com.hnamhocit.hndb",
+  "identifier": "com.pgzen.app",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,13 +12,23 @@
   "app": {
     "windows": [
       {
-        "title": "hndb",
-        "width": 800,
-        "height": 600
+        "title": "PgZen",
+        "width": 1024,
+        "height": 768,
+        "maximized": true,
+        "decorations": false
       }
     ],
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGQjQyRURDQzAyQzNEM0UKUldRK1BTekEzQzYwejE3ZGdqZmZzdWdDUXd2OW0vTW01d01DMDcwdXE1eU1aTmxzb2tOSnNGL1MK",
+      "endpoints": [
+        "https://github.com/hnamhocit/hndb/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {

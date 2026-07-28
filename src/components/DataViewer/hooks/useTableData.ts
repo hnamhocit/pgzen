@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { TabDoc } from '@/store/useTabStore';
-import { ColumnInfo } from '@/lib/tauri';
+import { ColumnInfo, listForeignKeys } from '@/lib/tauri';
 import { useDataViewerStore } from '../store/useDataViewerStore';
 import { parseFilterToSql } from '../utils';
 
@@ -18,6 +18,10 @@ export function useTableData(tab: TabDoc) {
     setExecutionTime,
     setSelectedRows,
     refreshTrigger,
+    setRawQuery,
+    sortColumn,
+    sortDirection,
+    setForeignKeys,
   } = useDataViewerStore();
 
   useEffect(() => {
@@ -39,6 +43,20 @@ export function useTableData(tab: TabDoc) {
 
         if (!isMounted) return;
         setColumns(cols);
+
+        // 1.5. Fetch foreign keys
+        try {
+          const fks = await listForeignKeys(
+            tab.connectionId as string,
+            tab.database as string,
+            tab.schema as string,
+            tab.table as string
+          );
+          if (isMounted) setForeignKeys(fks);
+        } catch (err) {
+          console.error("Failed to fetch foreign keys", err);
+          if (isMounted) setForeignKeys([]);
+        }
 
         // 2. Fetch total count
         let whereClause = "";
@@ -63,7 +81,19 @@ export function useTableData(tab: TabDoc) {
 
         // 3. Fetch data with pagination
         const offset = (page - 1) * pageSize;
-        const query = `SELECT * FROM "${tab.schema}"."${tab.table}"${whereClause} LIMIT ${pageSize} OFFSET ${offset}`;
+        
+        let orderClause = "";
+        if (sortColumn && sortDirection) {
+          orderClause = ` ORDER BY "${sortColumn}" ${sortDirection}`;
+        } else if (cols && cols.length > 0) {
+          const pkCol = cols.find(c => c.is_primary_key);
+          const orderCol = pkCol ? pkCol.name : cols[0].name;
+          orderClause = ` ORDER BY "${orderCol}" ASC`;
+        }
+        
+        const query = `SELECT * FROM "${tab.schema}"."${tab.table}"${whereClause}${orderClause} LIMIT ${pageSize} OFFSET ${offset}`;
+        
+        if (isMounted) setRawQuery(query);
         
         const t0 = performance.now();
         const rows: any[] = await invoke("execute_query", {
@@ -89,5 +119,5 @@ export function useTableData(tab: TabDoc) {
     return () => {
       isMounted = false;
     };
-  }, [tab.connectionId, tab.database, tab.schema, tab.table, page, pageSize, appliedFilter, refreshTrigger]);
+  }, [tab.connectionId, tab.database, tab.schema, tab.table, page, pageSize, appliedFilter, refreshTrigger, sortColumn, sortDirection]);
 }

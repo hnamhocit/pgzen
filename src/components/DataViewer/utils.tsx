@@ -1,49 +1,10 @@
-import {
-  TextAaIcon,
-  HashIcon,
-  CalendarBlankIcon,
-  BracketsCurlyIcon,
-  ShapesIcon,
-  ToggleLeftIcon,
-  FingerprintIcon,
-} from "@phosphor-icons/react";
+import { getTypeColorHex, TypeColorGroup } from "@/store/useThemeStore";
 
-export function getColumnColor(type: string) {
-  const t = type.toLowerCase();
-  
-  if (t.includes("uuid")) return { bg: "bg-purple-100 dark:bg-purple-900/40", text: "text-purple-700 dark:text-purple-400" };
-  
-  if (t.includes("int") || t.includes("float") || t.includes("double") || t.includes("numeric") || t.includes("decimal") || t.includes("real")) 
-    return { bg: "bg-blue-100 dark:bg-blue-900/40", text: "text-blue-700 dark:text-blue-400" };
-  
-  if (t.includes("char") || t.includes("text")) 
-    return { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-700 dark:text-slate-300" };
-  
-  if (t.includes("bool")) 
-    return { bg: "bg-emerald-100 dark:bg-emerald-900/40", text: "text-emerald-700 dark:text-emerald-400" };
-  
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) 
-    return { bg: "bg-pink-100 dark:bg-pink-900/40", text: "text-pink-700 dark:text-pink-400" };
-  
-  if (t.includes("json") || t.includes("array")) 
-    return { bg: "bg-indigo-100 dark:bg-indigo-900/40", text: "text-indigo-700 dark:text-indigo-400" };
-  
-  return { bg: "bg-gray-100 dark:bg-gray-800", text: "text-gray-600 dark:text-gray-400" };
+export function getColumnColor(type: string, typeGroups?: TypeColorGroup[]) {
+  return getTypeColorHex(type, typeGroups);
 }
 
-export function DataTypeIcon({ type, className }: { type: string, className?: string }) {
-  const t = type.toLowerCase();
-  
-  if (t.includes("uuid")) return <FingerprintIcon className={className} weight="bold" />;
-  if (t.includes("int") || t.includes("float") || t.includes("double") || t.includes("numeric") || t.includes("decimal") || t.includes("real")) 
-    return <HashIcon className={className} weight="bold" />;
-  if (t.includes("char") || t.includes("text")) return <TextAaIcon className={className} weight="bold" />;
-  if (t.includes("json") || t.includes("array")) return <BracketsCurlyIcon className={className} weight="bold" />;
-  if (t.includes("date") || t.includes("time") || t.includes("timestamp")) return <CalendarBlankIcon className={className} weight="bold" />;
-  if (["boolean", "bool"].includes(t)) return <ToggleLeftIcon className={className} weight="bold" />;
-  
-  return <ShapesIcon className={className} weight="bold" />;
-}
+
 
 export function parseFilterToSql(filterText: string): string {
   if (!filterText) return "";

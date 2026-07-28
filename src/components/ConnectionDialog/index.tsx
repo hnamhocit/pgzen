@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Field,
   FieldDescription,
@@ -50,6 +51,11 @@ const connectionSchema = z.object({
   sslMode: z.enum(["disable", "require", "verify-ca", "verify-full"]),
   applicationName: z.string().optional(),
   connectTimeout: z.number().optional(),
+  useSsh: z.boolean().optional(),
+  sshHost: z.string().optional(),
+  sshPort: z.number().optional(),
+  sshUser: z.string().optional(),
+  sshPassword: z.string().optional(),
 });
 
 type ConnectionFormValues = z.infer<typeof connectionSchema>;
@@ -135,15 +141,13 @@ function Toast({ toast }: { toast: ToastState }) {
 export default function ConnectionDialog({
   children,
 }: {
-  children: React.ReactElement;
+  children?: React.ReactElement;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const { isDialogOpen, setDialogOpen, add } = useConnectionStore();
   const [isTesting, setIsTesting] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
-
-  const { add } = useConnectionStore();
 
   const form = useForm<ConnectionFormValues>({
     resolver: zodResolver(connectionSchema),
@@ -169,7 +173,7 @@ export default function ConnectionDialog({
       setTestPassed(false);
       setToast(null);
     }
-    setIsOpen(open);
+    setDialogOpen(open);
   };
 
   // ── Test Connection ──────────────────────────────────────────────────────
@@ -244,8 +248,12 @@ export default function ConnectionDialog({
           username: data.username,
           ssl_mode: data.sslMode,
           application_name: data.applicationName || undefined,
+          use_ssh: data.useSsh,
+          ssh_host: data.sshHost,
+          ssh_port: data.sshPort,
+          ssh_user: data.sshUser,
         },
-        data.password || undefined,
+        data.password || undefined
       );
 
       // Update sidebar state
@@ -257,7 +265,7 @@ export default function ConnectionDialog({
 
       // Đóng dialog sau 800ms để user thấy toast
       setTimeout(() => {
-        setIsOpen(false);
+        setDialogOpen(false);
         form.reset();
         setTestPassed(false);
         setToast(null);
@@ -276,8 +284,8 @@ export default function ConnectionDialog({
   const isBusy = isTesting || isConnecting;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={children} />
+    <Dialog open={isDialogOpen} onOpenChange={handleOpenChange}>
+      {children && <DialogTrigger render={children} />}
 
       <DialogContent className="sm:max-w-[580px] p-0 overflow-hidden gap-0">
         {/* Header */}
@@ -294,8 +302,9 @@ export default function ConnectionDialog({
         <form className="flex flex-col" onSubmit={(e) => e.preventDefault()}>
           <Tabs defaultValue="general" className="w-full">
             <div className="px-6 pt-4">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="general">General</TabsTrigger>
+                <TabsTrigger value="ssh">SSH Tunnel</TabsTrigger>
                 <TabsTrigger value="advanced">Advanced</TabsTrigger>
               </TabsList>
             </div>
@@ -420,6 +429,106 @@ export default function ConnectionDialog({
                       />
                     </Field>
                   </div>
+                </FieldGroup>
+              </TabsContent>
+
+              {/* ── TAB: SSH TUNNEL ──────────────────────────────────────── */}
+              <TabsContent value="ssh" className="mt-0 outline-none">
+                <FieldGroup>
+                  <Field className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FieldLabel>Use SSH Tunnel</FieldLabel>
+                      <FieldDescription>
+                        Connect to the database through an SSH server.
+                      </FieldDescription>
+                    </div>
+                    <Controller
+                      control={form.control}
+                      name="useSsh"
+                      render={({ field }) => (
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={(val) => {
+                            field.onChange(val);
+                            setTestPassed(false);
+                          }}
+                        />
+                      )}
+                    />
+                  </Field>
+
+                  {form.watch("useSsh") && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <div className="grid grid-cols-4 gap-3">
+                        <Field className="col-span-3">
+                          <FieldLabel htmlFor="ssh-host">SSH Host</FieldLabel>
+                          <Input
+                            id="ssh-host"
+                            className="font-mono text-sm"
+                            placeholder="ssh.example.com"
+                            {...form.register("sshHost")}
+                            onChange={(e) => {
+                              form.register("sshHost").onChange(e);
+                              setTestPassed(false);
+                            }}
+                          />
+                        </Field>
+
+                        <Field className="col-span-1">
+                          <FieldLabel htmlFor="ssh-port">Port</FieldLabel>
+                          <Input
+                            id="ssh-port"
+                            type="number"
+                            className="font-mono text-sm"
+                            placeholder="22"
+                            {...form.register("sshPort", { valueAsNumber: true })}
+                            onChange={(e) => {
+                              form.register("sshPort", { valueAsNumber: true }).onChange(e);
+                              setTestPassed(false);
+                            }}
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field>
+                          <FieldLabel htmlFor="ssh-user">SSH Username</FieldLabel>
+                          <Input
+                            id="ssh-user"
+                            className="font-mono text-sm"
+                            placeholder="ubuntu"
+                            {...form.register("sshUser")}
+                            onChange={(e) => {
+                              form.register("sshUser").onChange(e);
+                              setTestPassed(false);
+                            }}
+                          />
+                        </Field>
+
+                        <Field>
+                          <FieldLabel htmlFor="ssh-pass">SSH Password</FieldLabel>
+                          <Input
+                            id="ssh-pass"
+                            type="password"
+                            className="font-mono text-sm"
+                            placeholder="••••••••"
+                            {...form.register("sshPassword")}
+                            onChange={(e) => {
+                              form.register("sshPassword").onChange(e);
+                              setTestPassed(false);
+                            }}
+                          />
+                        </Field>
+                      </div>
+                      
+                      <div className="flex items-start gap-2 text-[11px] text-muted-foreground bg-amber-500/10 text-amber-600 dark:text-amber-500 rounded p-2.5 border border-amber-500/20">
+                        <InfoIcon size={14} className="mt-0.5 shrink-0" />
+                        <span>
+                          The connection will be tunneled securely. Currently, only password authentication is supported.
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </FieldGroup>
               </TabsContent>
 

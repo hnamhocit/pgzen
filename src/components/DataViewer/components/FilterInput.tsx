@@ -1,135 +1,299 @@
-import { useRef } from "react";
-import { cn } from "@/lib/utils";
+import { useState } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  FunnelIcon,
-  ClockCounterClockwiseIcon,
-  TrashIcon,
-} from "@phosphor-icons/react";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { FunnelIcon, TrashIcon, PlusIcon, CodeIcon } from "@phosphor-icons/react";
 import { useDataViewerStore } from "../store/useDataViewerStore";
-import { getColumnColor } from "../utils";
-import { useFilterSuggestions } from "../hooks/useFilterSuggestions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { normalizePostgresType, getPostgresTypeFamily } from "@/lib/postgresTypes";
+
+interface FilterCondition {
+  id: string;
+  column: string;
+  operator: string;
+  value: string;
+}
+
+const OPERATORS = [
+  { label: "equals", value: "=" },
+  { label: "not equals", value: "!=" },
+  { label: "greater than", value: ">" },
+  { label: "less than", value: "<" },
+  { label: "greater or eq", value: ">=" },
+  { label: "less or eq", value: "<=" },
+  { label: "contains", value: "ILIKE" },
+  { label: "json contains", value: "@>" },
+  { label: "is null", value: "IS NULL" },
+  { label: "is not null", value: "IS NOT NULL" },
+];
 
 export function FilterInput() {
   const {
+    columns,
     filterText,
     setFilterText,
     setAppliedFilter,
-    showSuggestions,
-    setShowSuggestions,
-    filterHistory,
-    selectedIndex,
-    setSelectedIndex,
     setPage,
+    rawQuery,
+    data,
   } = useDataViewerStore();
 
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { suggestions, saveHistory, clearHistory, handleSuggestionClick } = useFilterSuggestions();
+  const [conditions, setConditions] = useState<FilterCondition[]>(() => {
+    return [];
+  });
+  
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (open && conditions.length === 0) {
+      setConditions([
+        {
+          id: crypto.randomUUID(),
+          column: columns[0]?.name || "",
+          operator: "=",
+          value: "",
+        },
+      ]);
+    }
+  };
+
+  const getOperatorsForColumn = (columnName: string) => {
+    const col = columns.find((c) => c.name === columnName);
+    if (!col) return OPERATORS;
+    const dt = normalizePostgresType(col.data_type);
+    const family = getPostgresTypeFamily(dt);
+    
+    const isBoolean = family === "boolean";
+    const isNumber = family === "numeric";
+    const isDate = family === "date";
+    const isJson = family === "json";
+
+    if (isBoolean) {
+      return OPERATORS.filter((op) => ["=", "!=", "IS NULL", "IS NOT NULL"].includes(op.value));
+    }
+    if (isNumber || isDate) {
+      return OPERATORS.filter((op) => ["=", "!=", ">", "<", ">=", "<=", "IS NULL", "IS NOT NULL"].includes(op.value));
+    }
+    if (isJson) {
+      return OPERATORS.filter((op) => ["=", "!=", "@>", "IS NULL", "IS NOT NULL"].includes(op.value));
+    }
+    // String or other types
+    return OPERATORS.filter((op) => ["=", "!=", "ILIKE", "IS NULL", "IS NOT NULL"].includes(op.value));
+  };
+
+  const applyFilters = (conds: FilterCondition[]) => {
+    if (conds.length === 0) {
+      setFilterText("");
+      setAppliedFilter("");
+      setPage(1);
+      return;
+    }
+
+    const sqlParts = conds.map((c) => {
+      if (c.operator === "IS NULL" || c.operator === "IS NOT NULL") {
+        return `"${c.column}" ${c.operator}`;
+      }
+
+      // Escape single quotes for SQL
+      const escapedVal = c.value.replace(/'/g, "''");
+
+      if (c.operator === "ILIKE") {
+        return `"${c.column}" ${c.operator} '%${escapedVal}%'`;
+      }
+      
+      // For JSON operator @> (e.g., column @> '{"role":"admin"}')
+      if (c.operator === "@>") {
+        return `"${c.column}" ${c.operator} '${escapedVal}'`;
+      }
+      
+      // Postgres automatically casts string literals to the column's actual type.
+      // So wrapping in single quotes is universally safe and prevents syntax errors.
+      return `"${c.column}" ${c.operator} '${escapedVal}'`;
+    });
+
+    const newFilter = sqlParts.join(" AND ");
+    setFilterText(newFilter);
+    setAppliedFilter(newFilter);
+    setPage(1);
+  };
+
+  const addCondition = () => {
+    setConditions([
+      ...conditions,
+      {
+        id: crypto.randomUUID(),
+        column: columns[0]?.name || "",
+        operator: "=",
+        value: "",
+      },
+    ]);
+  };
+
+  const updateCondition = (id: string, updates: Partial<FilterCondition>) => {
+    setConditions(conditions.map(c => c.id === id ? { ...c, ...updates } : c));
+  };
+
+  const removeCondition = (id: string) => {
+    const next = conditions.filter(c => c.id !== id);
+    setConditions(next);
+    applyFilters(next);
+  };
+
+  const handleApply = () => {
+    applyFilters(conditions);
+    setIsOpen(false);
+  };
+  
+  const handleClear = () => {
+    setConditions([]);
+    applyFilters([]);
+    setIsOpen(false);
+  };
+
+  const getSuggestions = (column: string) => {
+    if (!column || !data) return [];
+    const uniqueVals = Array.from(new Set(data.map(r => r[column]))).filter(Boolean);
+    return uniqueVals.slice(0, 10).map(String);
+  };
 
   return (
-    <div className="relative flex-1 max-w-xl">
-      <FunnelIcon
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        size={16}
-      />
-      <Input
-        ref={inputRef}
-        value={filterText}
-        onChange={(e) => {
-          setFilterText(e.target.value);
-          setShowSuggestions(true);
-        }}
-        onFocus={() => setShowSuggestions(true)}
-        onBlur={() => {
-          setTimeout(() => setShowSuggestions(false), 200);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            setAppliedFilter(filterText);
-            saveHistory(filterText);
-            setPage(1);
-            setShowSuggestions(false);
-          } else if (e.key === "Escape") {
-            setShowSuggestions(false);
-          } else if (e.key === "ArrowDown") {
-            e.preventDefault();
-            if (showSuggestions && suggestions.length > 0) {
-              setSelectedIndex(prev => Math.min(prev + 1, Math.max(0, suggestions.length - 1)));
-            } else {
-              setShowSuggestions(true);
-            }
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setSelectedIndex(prev => Math.max(prev - 1, 0));
-          } else if (e.key === "Tab") {
-            if (showSuggestions && suggestions.length > 0) {
-              e.preventDefault();
-              handleSuggestionClick(suggestions[selectedIndex], inputRef);
-            }
-          }
-        }}
-        placeholder="Filter data... e.g. age > 18 && date between ('2020', '2021')"
-        className="h-9 pl-9 shadow-sm bg-background border-border focus-visible:ring-1 font-mono text-xs"
-      />
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute top-full left-0 min-w-full w-max max-w-lg mt-1 bg-popover border border-border shadow-lg rounded-md z-50 max-h-60 overflow-auto py-1">
-          {!filterText && filterHistory.length > 0 && (
-            <div className="px-3 py-1.5 flex items-center justify-between group">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <ClockCounterClockwiseIcon /> Recent Filters
-              </span>
-              <button 
-                onMouseDown={clearHistory}
-                className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <TrashIcon /> Clear
-              </button>
+    <div className="relative flex items-center gap-2">
+      <Popover open={isOpen} onOpenChange={handleOpenChange}>
+        <PopoverTrigger>
+          <div className="h-9 border-border bg-background flex items-center gap-2 border px-3 py-1 rounded-md cursor-pointer hover:bg-muted text-sm shadow-sm transition-colors">
+            <FunnelIcon size={16} />
+            <span className="font-mono text-xs">
+              {filterText ? "Filtered" : "Filter"}
+            </span>
+          </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-[450px] p-4" align="start">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-sm">Filters</h4>
+              <Button variant="ghost" size="sm" onClick={handleClear} className="h-6 text-xs text-muted-foreground hover:text-destructive">
+                Clear all
+              </Button>
             </div>
-          )}
-          {suggestions.map((s, idx) => {
-            const isFirstColumnAfterHistory = !filterText && s.type === 'column' && idx > 0 && suggestions[idx - 1].type === 'history';
-            return (
-              <div key={idx}>
-                {isFirstColumnAfterHistory && (
-                  <div className="px-3 py-1.5 mt-1 border-t border-border/50 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Columns
-                  </div>
-                )}
-                <div
-                  className={cn(
-                    "px-3 py-1.5 text-sm cursor-pointer font-mono flex items-center gap-2",
-                    selectedIndex === idx ? "bg-muted" : "hover:bg-muted"
-                  )}
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    handleSuggestionClick(s, inputRef);
-                  }}
-                >
-                  {s.type === 'history' && <ClockCounterClockwiseIcon className="text-muted-foreground shrink-0" size={14} />}
-                  {s.type === 'column' && <span className="text-[10px] bg-primary/10 text-primary px-1 rounded uppercase tracking-wider font-sans shrink-0">COL</span>}
-                  {s.type === 'keyword' && <span className="text-[10px] bg-muted-foreground/10 text-muted-foreground px-1 rounded uppercase tracking-wider font-sans shrink-0">KEY</span>}
-                  <span className="break-all">{s.value}</span>
-                  {s.dataType && (
-                    <span className={cn(
-                      "text-[10px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider shrink-0",
-                      selectedIndex !== idx && "ml-auto",
-                      getColumnColor(s.dataType).bg
-                    )}>
-                      {s.dataType}
-                    </span>
-                  )}
-                  {selectedIndex === idx && (
-                    <span className="text-[10px] bg-foreground/10 text-foreground px-1.5 py-0.5 rounded font-mono font-semibold shrink-0 ml-auto flex items-center gap-1">
-                      Tab ⇥
-                    </span>
-                  )}
+            
+            <div className="flex flex-col gap-3">
+              {conditions.length === 0 && (
+                <div className="text-sm text-muted-foreground italic text-center py-4">
+                  No filters applied.
                 </div>
-              </div>
-            );
-          })}
+              )}
+              {conditions.map((c) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <Select 
+                    value={c.column} 
+                    onValueChange={(v: string | null) => {
+                      if (!v) return;
+                      const validOps = getOperatorsForColumn(v);
+                      let newOp = c.operator;
+                      if (!validOps.find((op) => op.value === c.operator)) {
+                        newOp = validOps[0].value;
+                      }
+                      updateCondition(c.id, { column: v, operator: newOp });
+                    }}
+                  >
+                    <SelectTrigger className="w-[140px] h-8 text-xs font-mono">
+                      <SelectValue placeholder="Column" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {columns.map(col => (
+                        <SelectItem key={col.name} value={col.name} className="text-xs font-mono">
+                          {col.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={c.operator} onValueChange={(v: string | null) => { if (v) updateCondition(c.id, { operator: v }) }}>
+                    <SelectTrigger className="w-[110px] h-8 text-xs">
+                      <SelectValue placeholder="Operator" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getOperatorsForColumn(c.column).map(op => (
+                        <SelectItem key={op.value} value={op.value} className="text-xs">
+                          {op.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {!(c.operator === "IS NULL" || c.operator === "IS NOT NULL") && (
+                    <div className="flex-1 relative">
+                      <Input 
+                        value={c.value} 
+                        onChange={(e) => updateCondition(c.id, { value: e.target.value })} 
+                        className="h-8 text-xs font-mono pr-6" 
+                        placeholder="Value..."
+                        list={`suggestions-${c.id}`}
+                      />
+                      <datalist id={`suggestions-${c.id}`}>
+                        {getSuggestions(c.column).map(val => (
+                          <option key={val} value={val} />
+                        ))}
+                      </datalist>
+                    </div>
+                  )}
+
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0" onClick={() => removeCondition(c.id)}>
+                    <TrashIcon size={14} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between mt-2 pt-4 border-t border-border">
+              <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={addCondition}>
+                <PlusIcon size={12} /> Add Condition
+              </Button>
+              <Button size="sm" className="h-8 text-xs" onClick={handleApply}>
+                Apply
+              </Button>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {filterText && (
+        <div className="flex-1 px-3 py-1.5 rounded-md bg-muted border border-border flex items-center gap-2 max-w-xl overflow-hidden text-xs font-mono text-muted-foreground truncate" title={filterText}>
+          {filterText}
         </div>
       )}
+
+      <Dialog>
+        <DialogTrigger>
+          <div className="h-9 px-2 text-muted-foreground flex items-center justify-center gap-1 rounded-md hover:bg-muted cursor-pointer transition-colors text-sm font-medium" title="View Raw Query">
+            <CodeIcon size={16} /> <span className="hidden sm:inline ml-1 text-xs">SQL</span>
+          </div>
+        </DialogTrigger>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CodeIcon size={18} /> Raw Query
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-4 relative">
+            <pre className="p-4 rounded-md bg-muted font-mono text-sm overflow-x-auto border border-border/50 text-foreground whitespace-pre-wrap">
+              {rawQuery || "No query executed yet."}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

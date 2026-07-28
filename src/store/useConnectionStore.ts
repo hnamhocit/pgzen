@@ -8,6 +8,8 @@ import {
 interface ConnectionState {
   connections: SavedConnection[];
   loading: boolean;
+  isDialogOpen: boolean;
+  setDialogOpen: (open: boolean) => void;
   refresh: () => Promise<void>;
   remove: (id: string) => Promise<void>;
   add: (conn: SavedConnection) => void;
@@ -16,6 +18,9 @@ interface ConnectionState {
 export const useConnectionStore = create<ConnectionState>((set) => ({
   connections: [],
   loading: true,
+  isDialogOpen: false,
+
+  setDialogOpen: (open: boolean) => set({ isDialogOpen: open }),
 
   refresh: async () => {
     set({ loading: true });

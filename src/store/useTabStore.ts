@@ -4,7 +4,7 @@ import { persist } from "zustand/middleware";
 export type TabDoc = {
   id: string;
   title: string;
-  type: "sql" | "data";
+  type: "sql" | "data" | "table_designer";
   isDirty?: boolean;
   isNew?: boolean;
   queryText?: string;
@@ -25,7 +25,7 @@ interface TabState {
   queryCounter: number;
 
   handleAddTab: () => void;
-  addTab: (title: string, type: "sql" | "data", id?: string, meta?: { connectionId?: string; database?: string; schema?: string; table?: string; queryText?: string }) => void;
+  addTab: (title: string, type: "sql" | "data" | "table_designer", id?: string, meta?: { connectionId?: string; database?: string; schema?: string; table?: string; queryText?: string }) => void;
   closeTab: (id: string) => void;
   selectHiddenTab: (id: string) => void;
   handleReorder: (newVisibleOrder: TabDoc[]) => void;

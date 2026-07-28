@@ -7,8 +7,8 @@ use tokio::sync::Mutex;
 use std::collections::HashMap;
 use uuid::Uuid;
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
-use std::str::FromStr;
 use tokio_postgres::Config;
+use crate::ssh::start_ssh_tunnel;
 
 fn pool_store() -> &'static Arc<Mutex<HashMap<String, Pool>>> {
     static POOL_STORE: OnceLock<Arc<Mutex<HashMap<String, Pool>>>> = OnceLock::new();
@@ -30,24 +30,49 @@ pub struct ConnectionConfig {
     pub password: Option<String>,
     pub ssl_mode: String,
     pub application_name: Option<String>,
+    pub use_ssh: Option<bool>,
+    pub ssh_host: Option<String>,
+    pub ssh_port: Option<u16>,
+    pub ssh_user: Option<String>,
+    pub ssh_password: Option<String>,
 }
 
 #[tauri::command]
 pub async fn test_postgres_connection(config: ConnectionConfig) -> Result<String, String> {
-    let mut config_str = format!(
-        "host={} port={} dbname={} user={}",
-        config.host, config.port, config.database, config.username
-    );
+    let mut host = config.host.clone();
+    let mut port = config.port;
+
+    if config.use_ssh.unwrap_or(false) {
+        if let (Some(ssh_host), Some(ssh_port), Some(ssh_user)) = (&config.ssh_host, config.ssh_port, &config.ssh_user) {
+            let temp_id = uuid::Uuid::new_v4().to_string();
+            let local_port = start_ssh_tunnel(
+                &temp_id,
+                ssh_host,
+                ssh_port,
+                ssh_user,
+                &config.ssh_password,
+                &config.host,
+                config.port,
+            ).await?;
+            host = "127.0.0.1".to_string();
+            port = local_port;
+        } else {
+            return Err("Missing SSH configuration".into());
+        }
+    }
+
+    let mut pg_config = Config::new();
+    pg_config.host(&host).port(port).dbname(&config.database).user(&config.username);
 
     if let Some(ref pass) = config.password {
         if !pass.is_empty() {
-            config_str.push_str(&format!(" password={}", pass));
+            pg_config.password(pass);
         }
     }
 
     if let Some(ref app_name) = config.application_name {
         if !app_name.is_empty() {
-            config_str.push_str(&format!(" application_name={}", app_name));
+            pg_config.application_name(app_name);
         }
     }
 
@@ -57,7 +82,7 @@ pub async fn test_postgres_connection(config: ConnectionConfig) -> Result<String
         _ => NoTls,
     };
 
-    match tokio_postgres::connect(&config_str, tls).await {
+    match pg_config.connect(tls).await {
         Ok((client, connection)) => {
             // Spawn the connection driver
             tokio::spawn(async move {
@@ -91,22 +116,40 @@ pub(crate) async fn connect_by_id(app: &AppHandle, id: &str, override_db: Option
     let mut store = pool_store().lock().await;
 
     if !store.contains_key(&pool_key) {
-        let mut config_str = format!(
-            "host={} port={} dbname={} user={}",
-            conn.host, conn.port, db_name, conn.username
-        );
+        let mut host = conn.host.clone();
+        let mut port = conn.port;
+
+        if conn.use_ssh.unwrap_or(false) {
+            if let (Some(ssh_host), Some(ssh_port), Some(ssh_user)) = (&conn.ssh_host, conn.ssh_port, &conn.ssh_user) {
+                let local_port = start_ssh_tunnel(
+                    id,
+                    ssh_host,
+                    ssh_port,
+                    ssh_user,
+                    &conn.ssh_password,
+                    &conn.host,
+                    conn.port,
+                ).await?;
+                host = "127.0.0.1".to_string();
+                port = local_port;
+            } else {
+                return Err("Missing SSH configuration".into());
+            }
+        }
+
+        let mut pg_config = Config::new();
+        pg_config.host(&host).port(port).dbname(&db_name).user(&conn.username);
+        
         if let Some(pass) = password {
             if !pass.is_empty() {
-                config_str.push_str(&format!(" password={}", pass));
+                pg_config.password(pass);
             }
         }
         if let Some(ref app_name) = conn.application_name {
             if !app_name.is_empty() {
-                config_str.push_str(&format!(" application_name={}", app_name));
+                pg_config.application_name(app_name);
             }
         }
-
-        let pg_config = Config::from_str(&config_str).map_err(|e| format!("Config parse error: {}", e))?;
         let mgr_config = ManagerConfig { recycling_method: RecyclingMethod::Fast };
         let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
         let pool = Pool::builder(mgr).max_size(16).build().map_err(|e| format!("Pool error: {}", e))?;
@@ -435,7 +478,20 @@ pub async fn execute_query(
     let rows = client
         .query(&wrapped_query, &[])
         .await
-        .map_err(|e| format!("Query failed: {}", e))?;
+        .map_err(|e| {
+            if let Some(db_err) = e.as_db_error() {
+                let mut msg = format!("SQL Error: {}", db_err.message());
+                if let Some(detail) = db_err.detail() {
+                    msg.push_str(&format!("\nDetail: {}", detail));
+                }
+                if let Some(hint) = db_err.hint() {
+                    msg.push_str(&format!("\nHint: {}", hint));
+                }
+                msg
+            } else {
+                format!("Query failed: {}", e)
+            }
+        })?;
 
     let mut results = Vec::new();
     for row in rows {

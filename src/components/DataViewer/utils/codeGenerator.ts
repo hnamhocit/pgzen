@@ -1,4 +1,5 @@
 import { ColumnInfo } from "@/lib/tauri";
+import { getPostgresTypeFamily, normalizePostgresType } from "@/lib/postgresTypes";
 
 export type Language = 'rust' | 'typescript' | 'python' | 'dart' | 'csharp' | 'java';
 
@@ -6,11 +7,12 @@ export function generateCode(lang: Language, tableName: string, columns: ColumnI
   const className = tableName.charAt(0).toUpperCase() + tableName.slice(1);
   
   const getType = (pgType: string, l: Language) => {
-    const t = pgType.toLowerCase();
-    const isNum = t.includes('int') || t.includes('float') || t.includes('numeric') || t.includes('double') || t.includes('decimal');
-    const isBool = t.includes('bool');
-    const isDate = t.includes('date') || t.includes('time');
-    const isJson = t.includes('json');
+    const t = normalizePostgresType(pgType);
+    const family = getPostgresTypeFamily(t);
+    const isNum = family === "numeric";
+    const isBool = family === "boolean";
+    const isDate = family === "date";
+    const isJson = family === "json";
 
     switch (l) {
       case 'rust':
