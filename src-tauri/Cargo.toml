@@ -1,6 +1,6 @@
 [package]
 name = "pgzen"
-version = "0.0.6"
+version = "1.0.0"
 description = "PgZen - Modern PostgreSQL GUI"
 authors = ["you"]
 edition = "2021"
