@@ -30,7 +30,6 @@ import {
   BookmarkSimpleIcon,
   FloppyDiskIcon,
 } from "@phosphor-icons/react";
-import { faker } from "@faker-js/faker";
 import { toast } from "sonner";
 import { format as formatSqlString } from "sql-formatter";
 import { cn } from "@/lib/utils";

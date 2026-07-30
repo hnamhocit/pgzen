@@ -28,9 +28,10 @@ vi.mock('../hooks/useDataExport', () => ({
 describe('DataViewerToolbar', () => {
   const mockTab = {
     id: 'tab-1',
+    title: 'tab-1',
     connectionId: 'conn-1',
     database: 'postgres',
-    type: 'table' as const,
+    type: 'data' as const,
     schema: 'public',
     table: 'users',
     isDirty: false,
@@ -89,7 +90,7 @@ describe('DataViewerToolbar', () => {
     fireEvent.click(dialogConfirmBtn);
 
     // Give microtasks time to finish since it's an async handler
-    await new Promise(process.nextTick);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(invoke).toHaveBeenCalledWith('execute_sql_raw', {
       connectionId: 'conn-1',
@@ -116,7 +117,7 @@ describe('DataViewerToolbar', () => {
     const dialogConfirmBtn = screen.getByText(/Commit 1 Change\(s\)/i);
     fireEvent.click(dialogConfirmBtn);
 
-    await new Promise(process.nextTick);
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(invoke).toHaveBeenCalledWith('execute_sql_raw', {
       connectionId: 'conn-1',

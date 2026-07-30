@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTabStore } from "@/store/useTabStore";
-import { CircleNotchIcon, DatabaseIcon, MagicWandIcon } from "@phosphor-icons/react";
+import { CircleNotchIcon, MagicWandIcon } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { ColumnInfo } from "@/lib/tauri";
 

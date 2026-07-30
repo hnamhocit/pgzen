@@ -97,6 +97,7 @@ function TreeNode({
   onQueryDatabase,
   onCreateTable,
   onImportData,
+  onGenerateMockData,
 }: {
   node: NodeApi<DbNode>;
   style: React.CSSProperties;
