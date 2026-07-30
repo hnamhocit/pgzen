@@ -13,6 +13,7 @@ export type TabDoc = {
   schema?: string;
   table?: string;
   history?: { query: string; timestamp: number; error?: string }[];
+  variables?: Record<string, string>;
 };
 
 const initialTabs: TabDoc[] = [];
@@ -25,13 +26,14 @@ interface TabState {
   queryCounter: number;
 
   handleAddTab: () => void;
-  addTab: (title: string, type: "sql" | "data" | "table_designer", id?: string, meta?: { connectionId?: string; database?: string; schema?: string; table?: string; queryText?: string }) => void;
+  addTab: (title: string, type: "sql" | "data" | "table_designer", id?: string, meta?: { connectionId?: string; database?: string; schema?: string; table?: string; queryText?: string; variables?: Record<string, string> }) => void;
   closeTab: (id: string) => void;
   selectHiddenTab: (id: string) => void;
   handleReorder: (newVisibleOrder: TabDoc[]) => void;
   closeAllTabs: () => void;
   setActiveTab: (id: string) => void;
   updateTabQuery: (id: string, query: string) => void;
+  updateTabVariables: (id: string, variables: Record<string, string>) => void;
   clearDirty: (id: string) => void;
   
   addTabHistory: (id: string, item: { query: string; timestamp: number; error?: string }) => void;
@@ -141,6 +143,14 @@ export const useTabStore = create<TabState>()(
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === id ? { ...t, queryText: query, isDirty: true } : t
+      ),
+    }));
+  },
+
+  updateTabVariables: (id, variables) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === id ? { ...t, variables } : t
       ),
     }));
   },

@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent, useEffect } from "react";
+import { useState, useRef, KeyboardEvent, useEffect, useMemo } from "react";
 import { TabDoc, useTabStore } from "@/store/useTabStore";
 import { useConnectionStore } from "@/store/useConnectionStore";
 import { invoke } from "@tauri-apps/api/core";
@@ -38,67 +38,15 @@ import VisualExplain from "./VisualExplain";
 import { useSnippetStore, SqlSnippet } from "@/store/useSnippetStore";
 import { getColumnColor } from "../DataViewer/utils";
 
-function processFakerTemplates(query: string): string {
-  return query.replace(
-    /\{\{faker\.([a-zA-Z0-9_.]+)(?:\(\))?\}\}/g,
-    (match, path) => {
-      try {
-        const parts = path.split(".");
-        let current: any = faker;
-        for (const part of parts) {
-          if (current[part] === undefined) return match;
-          current = current[part];
-        }
-        if (typeof current === "function") return String(current());
-        return String(current);
-      } catch (e) {
-        return match;
-      }
-    },
-  );
-}
-
-function stripSqlComments(sql: string): string {
-  return sql
-    .replace(/--.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .trim();
-}
-
-function processQueryLimits(query: string): string {
-  const stripped = stripSqlComments(query).toUpperCase();
-  if (stripped.startsWith("SELECT") && !stripped.includes("LIMIT")) {
-    const cleanQuery = query.trim().replace(/;$/, "");
-    return cleanQuery + "\nLIMIT 100";
-  }
-  return query;
-}
-
-function extractQueryPlanFromResult(res: any[]): any {
-  for (const block of res) {
-    if (block.type === "command_complete" && block.rows && block.rows.length > 0) {
-      const firstRow = block.rows[0];
-      if (firstRow["QUERY PLAN"]) {
-        const planText = block.rows.map((r: any) => r["QUERY PLAN"]).join("\n");
-        try {
-          return JSON.parse(planText);
-        } catch(e) {
-          return null; // Not JSON format
-        }
-      }
-    }
-  }
-  return null;
-}
-
-function isPureSelect(query: string): boolean {
-  const stripped = stripSqlComments(query).toUpperCase();
-  return (
-    stripped.startsWith("SELECT") ||
-    stripped.startsWith("EXPLAIN") ||
-    stripped.startsWith("SHOW")
-  );
-}
+import {
+  processFakerTemplates,
+  stripSqlComments,
+  processQueryLimits,
+  extractQueryPlanFromResult,
+  isPureSelect,
+  extractQueryVariables,
+  replaceQueryVariables
+} from "./utils";
 
 function QueryHistoryItem({ item, onLoad }: { item: any; onLoad: () => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -177,7 +125,7 @@ function SnippetItem({ item, onLoad, onRemove }: { item: SqlSnippet; onLoad: () 
 
 
 export default function QueryEditor({ tab }: { tab: TabDoc }) {
-  const { updateTabQuery, clearDirty, addTabHistory, clearTabHistory } =
+  const { updateTabQuery, updateTabVariables, clearDirty, addTabHistory, clearTabHistory } =
     useTabStore();
   const { connections } = useConnectionStore();
 
@@ -207,6 +155,12 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
   const { snippets, addSnippet, removeSnippet } = useSnippetStore();
   const [saveSnippetName, setSaveSnippetName] = useState("");
   const [isSaveSnippetOpen, setIsSaveSnippetOpen] = useState(false);
+
+  const extractedVariables = useMemo(() => extractQueryVariables(query), [query]);
+
+  const handleVariableChange = (varName: string, value: string) => {
+    updateTabVariables(tab.id, { ...(tab.variables || {}), [varName]: value });
+  };
 
   const updateListener = EditorView.updateListener.of((update) => {
     if (update.selectionSet || update.docChanged) {
@@ -314,6 +268,7 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
 
     let finalQuery = selectedText.trim() ? selectedText : query;
     try {
+      finalQuery = replaceQueryVariables(finalQuery, tab.variables || {});
       finalQuery = processFakerTemplates(finalQuery);
       finalQuery = processQueryLimits(finalQuery);
 
@@ -680,6 +635,28 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
             </div>
           )}
         </div>
+
+        {/* Variables Banner */}
+        {extractedVariables.length > 0 && (
+          <div className="p-2 border-b border-border bg-muted/10 flex items-center gap-4 flex-wrap shrink-0 shadow-inner">
+            <span className="text-xs font-semibold text-primary/70 uppercase tracking-wider">Variables</span>
+            <div className="flex items-center gap-3 flex-wrap">
+              {extractedVariables.map((varName) => (
+                <div key={varName} className="flex items-center">
+                  <span className="text-[11px] font-mono bg-muted text-muted-foreground px-2 py-1 rounded-l-md border border-r-0 border-border">
+                    {varName}
+                  </span>
+                  <Input
+                    className="h-[26px] w-36 text-xs rounded-l-none border-border focus-visible:ring-1 focus-visible:ring-offset-0 px-2 font-mono"
+                    placeholder="NULL"
+                    value={tab.variables?.[varName] || ""}
+                    onChange={(e: any) => handleVariableChange(varName, e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Pending Transaction Banner */}
         {sessionId && (

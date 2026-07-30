@@ -20,6 +20,7 @@ import { InsertRowDialog } from "./InsertRowDialog";
 import { BulkUpdateDialog } from "./BulkUpdateDialog";
 import { CopyCodeMenu } from "./CopyCodeMenu";
 import { ExportMenu } from "./ExportMenu";
+import { StagingDialog } from "./StagingDialog";
 
 export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
   const {
@@ -46,6 +47,9 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
   const [isInserting, setIsInserting] = useState(false);
   const [isBulkUpdateDialogOpen, setIsBulkUpdateDialogOpen] = useState(false);
   const [bulkUpdateData, setBulkUpdateData] = useState<Record<string, any>>({});
+  
+  const [stagingMode, setStagingMode] = useState<"edit" | "delete" | null>(null);
+  const [isCommitting, setIsCommitting] = useState(false);
 
   const { handleExport } = useDataExport(tab.table || "");
 
@@ -67,12 +71,18 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
     return conditions;
   };
 
-  const handleSaveChanges = async () => {
+  const handleSaveChanges = () => {
     const editKeys = Object.keys(editedData);
     if (editKeys.length === 0) {
       setIsStagedEdit(false);
       return;
     }
+    setStagingMode("edit");
+  };
+
+  const executeSaveChanges = async () => {
+    setIsCommitting(true);
+    const editKeys = Object.keys(editedData);
     
     let successCount = 0;
     let failCount = 0;
@@ -112,12 +122,18 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
       setIsStagedEdit(false);
       setEditedData({});
       setSelectedRows(new Set());
+      setStagingMode(null);
     }
+    setIsCommitting(false);
   };
 
-  const handleCommitDelete = async () => {
+  const handleCommitDelete = () => {
     if (selectedRows.size === 0) return;
+    setStagingMode("delete");
+  };
 
+  const executeCommitDelete = async () => {
+    setIsCommitting(true);
     let successCount = 0;
     let failCount = 0;
 
@@ -148,7 +164,9 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
     if (failCount === 0) {
       setIsStagedDelete(false);
       setSelectedRows(new Set());
+      setStagingMode(null);
     }
+    setIsCommitting(false);
   };
 
   const handleInsertRow = async () => {
@@ -411,6 +429,20 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
           </button>
         </>
       )}
+
+      <StagingDialog
+        isOpen={stagingMode !== null}
+        onClose={() => setStagingMode(null)}
+        onConfirm={stagingMode === "edit" ? executeSaveChanges : executeCommitDelete}
+        mode={stagingMode}
+        data={data}
+        columns={columns}
+        editedData={editedData}
+        selectedRows={selectedRows}
+        schema={tab.schema || "public"}
+        table={tab.table || ""}
+        isCommitting={isCommitting}
+      />
     </div>
   );
 }

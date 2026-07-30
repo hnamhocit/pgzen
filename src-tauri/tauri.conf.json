@@ -12,11 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "PgZen",
+        "title": " ",
         "width": 1024,
         "height": 768,
         "maximized": true,
-        "decorations": false
+        "decorations": true
       }
     ],
     "security": {

@@ -19,9 +19,11 @@ import {
   PlusIcon,
   UploadSimpleIcon,
   TerminalWindowIcon,
+  MagicWandIcon,
 } from "@phosphor-icons/react";
 
 import { ImportDataDialog } from "../ImportDataDialog";
+import { MockDataDialog } from "../MockDataDialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -108,6 +110,7 @@ function TreeNode({
   onQueryDatabase?: (node: DbNode) => void;
   onCreateTable?: (node: DbNode) => void;
   onImportData?: (node: DbNode) => void;
+  onGenerateMockData?: (node: DbNode) => void;
 }) {
   const getIcon = (type: NodeType, isOpen: boolean, isPk?: boolean) => {
     switch (type) {
@@ -290,6 +293,10 @@ function TreeNode({
               Query Table
             </ContextMenuItem>
             <ContextMenuSeparator />
+            <ContextMenuItem className="gap-2" onClick={() => onGenerateMockData?.(node.data)}>
+              <MagicWandIcon size={14} />
+              Generate Mock Data
+            </ContextMenuItem>
             <ContextMenuItem className="gap-2" onClick={() => onImportData?.(node.data)}>
               <UploadSimpleIcon size={14} />
               Import Data
@@ -341,6 +348,14 @@ export default function DatabaseExplorer() {
   const handleImportData = useCallback((node: DbNode) => {
     setImportTableNode(node);
     setImportOpen(true);
+  }, []);
+
+  const [mockDataOpen, setMockDataOpen] = useState(false);
+  const [mockDataTableNode, setMockDataTableNode] = useState<DbNode | null>(null);
+
+  const handleGenerateMockData = useCallback((node: DbNode) => {
+    setMockDataTableNode(node);
+    setMockDataOpen(true);
   }, []);
 
   const handleViewData = useCallback((node: DbNode) => {
@@ -517,6 +532,7 @@ export default function DatabaseExplorer() {
             onQueryDatabase={handleQueryDatabase}
             onCreateTable={handleCreateTable}
             onImportData={handleImportData}
+            onGenerateMockData={handleGenerateMockData}
             onDoubleClickTable={(nodeData) => {
               const tableId = `table_${nodeData.connectionId}_${nodeData.database}_${nodeData.schema}_${nodeData.table}`;
               addTab(nodeData.table || "table", "data", tableId, {
@@ -543,6 +559,17 @@ export default function DatabaseExplorer() {
           onSuccess={() => {
             // Trigger refresh if tab is open
           }}
+        />
+      )}
+
+      {mockDataTableNode && mockDataTableNode.connectionId && mockDataTableNode.database && mockDataTableNode.schema && mockDataTableNode.table && (
+        <MockDataDialog
+          isOpen={mockDataOpen}
+          onClose={() => setMockDataOpen(false)}
+          connectionId={mockDataTableNode.connectionId}
+          database={mockDataTableNode.database}
+          schema={mockDataTableNode.schema}
+          table={mockDataTableNode.table}
         />
       )}
     </div>
