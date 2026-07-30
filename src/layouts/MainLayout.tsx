@@ -6,9 +6,38 @@ import { PlugsConnectedIcon } from "@phosphor-icons/react";
 import ConnectionDialog from "@/components/ConnectionDialog";
 import { useVimStore } from "@/store/useVimStore";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { toast } from "sonner";
 
 export default function MainLayout() {
   const { enabled, mode, activePane } = useVimStore();
+  const [appVersion, setAppVersion] = useState<string>("...");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(console.error);
+
+    const checkUpdate = async () => {
+      try {
+        const update = await check();
+        if (update) {
+          console.log(`Found update ${update.version}, downloading...`);
+          await update.downloadAndInstall();
+          console.log('Update installed, restarting...');
+          toast.success("Cập nhật thành công, đang khởi động lại...");
+          setTimeout(async () => {
+            await relaunch();
+          }, 1500);
+        }
+      } catch (e) {
+        console.error("Failed to check for updates:", e);
+      }
+    };
+
+    checkUpdate();
+  }, []);
 
   return (
     <div className={cn(
@@ -31,7 +60,7 @@ export default function MainLayout() {
             <div>
               <div className="font-bold text-primary text-lg">PgZen</div>
               <div className="text-xs font-medium text-muted-foreground">
-                0.0.1 beta
+                v{appVersion}
               </div>
             </div>
           </Link>
