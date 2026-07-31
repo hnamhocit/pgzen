@@ -5,14 +5,29 @@ export function processFakerTemplates(query: string): string {
     /\{\{faker\.([a-zA-Z0-9_.]+)(?:\(\))?\}\}/g,
     (match, path) => {
       try {
-        const parts = path.split(".");
+        let actualPath = path;
+        // Aliases for common old faker API usage
+        if (actualPath.startsWith("name.")) actualPath = actualPath.replace("name.", "person.");
+        if (actualPath.startsWith("address.")) actualPath = actualPath.replace("address.", "location.");
+        if (actualPath.startsWith("company.companyName")) actualPath = actualPath.replace("company.companyName", "company.name");
+
+        const parts = actualPath.split(".");
         let current: any = faker;
         for (const part of parts) {
           if (current[part] === undefined) return match;
           current = current[part];
         }
-        if (typeof current === "function") return String(current());
-        return String(current);
+        
+        let resultStr = "";
+        if (typeof current === "function") {
+          resultStr = String(current());
+        } else {
+          resultStr = String(current);
+        }
+        
+        // If the match is not already surrounded by quotes in the query, we don't auto-quote here
+        // to give users control, but typically users write '{{faker.person.firstName}}'.
+        return resultStr;
       } catch (e) {
         return match;
       }

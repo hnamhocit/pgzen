@@ -276,7 +276,7 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
 
   const hasEdits = Object.keys(editedData).length > 0;
 
-  if (selectedRows.size === 0 && !hasEdits && !isStagedDelete && !isStagedEdit) return null;
+  // We want the toolbar to always be visible for Export, Copy as Code, Add Row
 
   return (
     <div className="flex items-center gap-4 ml-auto">
@@ -300,7 +300,7 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
             }}
             className="flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50 px-2 py-1.5 rounded transition-colors"
           >
-            <PlusIcon size={16} /> Add Row
+            <PlusIcon size={16} /> Add row(s)
           </button>
           
           <InsertRowDialog 
@@ -315,12 +315,14 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
             onInsert={handleInsertRow}
           />
 
-          <button 
-            onClick={() => setIsStagedEdit(true)}
-            className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 px-2 py-1.5 rounded transition-colors"
-          >
-            <PencilSimpleIcon size={16} /> Edit
-          </button>
+          {selectedRows.size > 0 && (
+            <button 
+              onClick={() => setIsStagedEdit(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-500 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/50 px-2 py-1.5 rounded transition-colors"
+            >
+              <PencilSimpleIcon size={16} /> Edit
+            </button>
+          )}
           
           {selectedRows.size > 1 && (
             <>
@@ -356,22 +358,27 @@ export function DataViewerToolbar({ tab }: { tab: TabDoc }) {
               <FileCodeIcon size={16} /> Duplicate
             </button>
           )}
-          <button 
-            onClick={() => setIsStagedDelete(true)}
-            className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded transition-colors"
-          >
-            <TrashIcon size={16} /> Delete
-          </button>
+          {selectedRows.size > 0 && (
+            <button 
+              onClick={() => setIsStagedDelete(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-destructive/80 hover:text-destructive hover:bg-destructive/10 px-2 py-1.5 rounded transition-colors"
+            >
+              <TrashIcon size={16} /> Delete
+            </button>
+          )}
 
-          <div className="w-px h-5 bg-border mx-1"></div>
-
-          <button 
-            onClick={() => setSelectedRows(new Set())}
-            className="flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors"
-            title="Discard selection"
-          >
-            <XIcon size={16} />
-          </button>
+          {selectedRows.size > 0 && (
+            <>
+              <div className="w-px h-5 bg-border mx-1"></div>
+              <button 
+                onClick={() => setSelectedRows(new Set())}
+                className="flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted p-1.5 rounded-full transition-colors"
+                title="Discard selection"
+              >
+                <XIcon size={16} />
+              </button>
+            </>
+          )}
         </>
       ) : isStagedDelete ? (
         <>

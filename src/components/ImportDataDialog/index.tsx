@@ -63,8 +63,13 @@ export function ImportDataDialog({
     setFile(f);
     
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
+      const loadingToast = toast.loading(`Parsing ${f.name}...`);
+      
       try {
+        // Yield to let the toast render
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
         const content = ev.target?.result;
         let data: any[] = [];
         let keys: string[] = [];
@@ -74,7 +79,7 @@ export function ImportDataDialog({
           if (Array.isArray(parsed)) {
             data = parsed;
           } else {
-            toast.error("JSON file must contain an array of objects");
+            toast.error("JSON file must contain an array of objects", { id: loadingToast });
             return;
           }
         } else {
@@ -96,7 +101,7 @@ export function ImportDataDialog({
         }
         
         if (keys.length === 0) {
-          toast.error("No valid columns found in the file");
+          toast.error("No valid columns found in the file", { id: loadingToast });
           return;
         }
 
@@ -113,9 +118,9 @@ export function ImportDataDialog({
         });
         setColumnMapping(initialMapping);
         setStep(2);
-
+        toast.success(`Successfully parsed ${data.length} rows`, { id: loadingToast });
       } catch (err) {
-        toast.error("Failed to parse file: " + err);
+        toast.error("Failed to parse file: " + err, { id: loadingToast });
       }
     };
     

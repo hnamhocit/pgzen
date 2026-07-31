@@ -98,10 +98,12 @@ function TreeNode({
   onCreateTable,
   onImportData,
   onGenerateMockData,
+  onEditConnection,
 }: {
   node: NodeApi<DbNode>;
   style: React.CSSProperties;
   dragHandle?: (el: HTMLDivElement | null) => void;
+  onEditConnection?: (id: string) => void;
   onDelete?: (id: string) => void;
   onRefresh?: () => void;
   onRefreshNode?: (node: DbNode) => void;
@@ -242,7 +244,7 @@ function TreeNode({
               <ArrowClockwiseIcon size={14} />
               Refresh Connection
             </ContextMenuItem>
-            <ContextMenuItem className="gap-2">
+            <ContextMenuItem className="gap-2" onClick={() => onEditConnection?.(node.data.id)}>
               <PencilSimpleIcon size={14} />
               Edit Connection
             </ContextMenuItem>
@@ -321,7 +323,7 @@ function TreeNode({
 // ─── Main Component ────────────────────────────────────────────────────────
 
 export default function DatabaseExplorer() {
-  const { connections, loading: connectionsLoading, refresh, remove } = useConnectionStore();
+  const { connections, loading: connectionsLoading, refresh, remove, openEditDialog } = useConnectionStore();
   const { items: searchItems, isIndexing, hasIndexed, buildIndex } = useSearchIndexStore();
   const { addTab } = useTabStore();
 
@@ -360,7 +362,8 @@ export default function DatabaseExplorer() {
   }, []);
 
   const handleViewData = useCallback((node: DbNode) => {
-    addTab(node.name, "data", `data_${node.id}`, {
+    const tableId = `table_${node.connectionId}_${node.database}_${node.schema}_${node.name}`;
+    addTab(node.name, "data", tableId, {
       connectionId: node.connectionId,
       database: node.database,
       schema: node.schema,
@@ -526,6 +529,10 @@ export default function DatabaseExplorer() {
           <TreeNode
             {...props}
             onDelete={(id) => remove(id)}
+            onEditConnection={(id) => {
+              const conn = connections.find((c) => c.id === id);
+              if (conn) openEditDialog(conn);
+            }}
             onRefresh={refresh}
             onRefreshNode={() => buildIndex(connections)}
             onViewData={handleViewData}

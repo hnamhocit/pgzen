@@ -36,6 +36,11 @@ import { cn } from "@/lib/utils";
 import VisualExplain from "./VisualExplain";
 import { useSnippetStore, SqlSnippet } from "@/store/useSnippetStore";
 import { getColumnColor } from "../DataViewer/utils";
+import { ExportMenu } from "../DataViewer/components/ExportMenu";
+import * as XLSX from "xlsx";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { useSearchIndexStore } from "@/store/useSearchIndexStore";
+import { FolderOpenIcon, TableIcon } from "@phosphor-icons/react";
 
 import {
   processFakerTemplates,
@@ -250,10 +255,81 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
     }
   };
 
+  const { items: searchItems } = useSearchIndexStore();
+  const updateTabMeta = useTabStore(state => state.updateTabMeta);
+  const [searchValue, setSearchValue] = useState("");
+
   if (!tab.connectionId) {
     return (
-      <div className="flex items-center justify-center h-full w-full text-muted-foreground">
-        Please select a connection for this query tab.
+      <div className="flex flex-col items-center justify-center h-full w-full bg-background/50 p-6">
+        <div className="text-center mb-6 max-w-md">
+          <DatabaseIcon className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">New Query</h2>
+          <p className="text-sm text-muted-foreground">Search and select a database, schema, or table to begin querying.</p>
+        </div>
+        <div className="w-full max-w-2xl border border-border rounded-lg shadow-lg bg-card flex flex-col overflow-hidden h-[400px]">
+          <Command className="flex-1 flex flex-col" shouldFilter={false}>
+            <CommandInput 
+              placeholder="Search..." 
+              value={searchValue}
+              onValueChange={setSearchValue}
+              autoFocus
+            />
+            <CommandList className="flex-1 overflow-y-auto custom-scrollbar">
+              <CommandEmpty>No results found.</CommandEmpty>
+              <CommandGroup heading="Suggestions">
+                {searchItems.filter(item => {
+                  const lowerInput = searchValue.toLowerCase();
+                  if (!lowerInput) return item.type === "database";
+                  const path = `${item.connectionName} ${item.database} ${(item as any).schema || ""} ${(item as any).table || ""}`.toLowerCase();
+                  return path.includes(lowerInput);
+                }).slice(0, 50).map(item => (
+                  <CommandItem
+                    key={item.id}
+                    value={item.id}
+                    onSelect={() => {
+                      const updates: Partial<TabDoc> = {
+                        connectionId: item.connectionId,
+                        database: item.database,
+                      };
+                      if (item.type === "table") {
+                        updates.schema = item.schema;
+                        updates.table = item.table;
+                        updates.queryText = `-- Querying ${item.schema}.${item.table}\nSELECT * FROM "${item.schema}"."${item.table}"\nLIMIT 100;\n`;
+                      } else if (item.type === "schema") {
+                        updates.schema = item.schema;
+                        updates.queryText = `-- Querying ${item.database}.${item.schema}\n\n`;
+                      } else {
+                        updates.queryText = `-- Querying ${item.database}\n\n`;
+                      }
+                      
+                      updateTabMeta(tab.id, updates);
+                    }}
+                    className="flex items-center gap-3 py-2 cursor-pointer"
+                  >
+                    {item.type === "table" ? (
+                      <TableIcon className="w-4 h-4 text-emerald-500" />
+                    ) : item.type === "schema" ? (
+                      <FolderOpenIcon className="w-4 h-4 text-blue-500" weight="fill" />
+                    ) : (
+                      <DatabaseIcon className="w-4 h-4 text-primary" weight="fill" />
+                    )}
+                    <div className="flex flex-col flex-1 truncate">
+                      <span className="font-medium text-sm">
+                        {item.type === "table" ? item.table : item.type === "schema" ? item.schema : item.database}
+                      </span>
+                      <span className="text-xs text-muted-foreground truncate">
+                        {item.connectionName} 
+                        {item.type !== "database" ? ` / ${item.database}` : ""}
+                        {item.type === "table" ? ` / ${item.schema}` : ""}
+                      </span>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </div>
       </div>
     );
   }
@@ -446,6 +522,62 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
     }
   };
 
+  const handleExport = async (format: 'json' | 'xlsx' | 'csv') => {
+    if (!results || results.length === 0) {
+      toast.error("No data to export.");
+      return;
+    }
+    const tableName = tab.table || 'query_result';
+    
+    const loadingToast = toast.loading(`Exporting to ${format.toUpperCase()}...`);
+
+    try {
+      // Yield to main thread so the toast can render
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      if (format === 'json') {
+        const jsonStr = JSON.stringify(results, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${tableName}_export.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (format === 'xlsx') {
+        const worksheet = XLSX.utils.json_to_sheet(results);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+        XLSX.writeFile(workbook, `${tableName}_export.xlsx`);
+      } else if (format === 'csv') {
+        const header = columns.map(c => `"${c.name}"`).join(",");
+        const csv = results.map(row => 
+          columns.map(c => {
+            let val = row[c.name];
+            if (val === null || val === undefined) return '""';
+            if (typeof val === 'object') val = JSON.stringify(val);
+            return `"${String(val).replace(/"/g, '""')}"`;
+          }).join(",")
+        ).join("\n");
+        const blob = new Blob([`${header}\n${csv}`], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${tableName}_export.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+      toast.success("Export successful!", { id: loadingToast });
+    } catch (error: any) {
+      console.error(error);
+      toast.error(`Export failed: ${error.message || error}`, { id: loadingToast });
+    }
+  };
+
   return (
     <div
       className="flex flex-col h-full w-full overflow-hidden bg-background outline-none"
@@ -459,7 +591,12 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
             size="sm"
             onClick={handleRunPreview}
             disabled={loading}
-            className="h-8 gap-1 shadow-sm"
+            className={cn(
+              "h-8 gap-1 shadow-sm transition-all",
+              extractedVariables.length > 0
+                ? "bg-primary text-primary-foreground animate-pulse shadow-[0_0_10px_rgba(var(--primary),0.5)]"
+                : ""
+            )}
           >
             <PlayIcon weight="bold" /> Run (Preview)
           </Button>
@@ -504,10 +641,9 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
           </div>
 
           <Dialog>
-            <DialogTrigger>
-              <div className="h-8 w-8 p-0 inline-flex items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer text-muted-foreground" title="Saved Snippets">
-                <BookmarkSimpleIcon size={18} />
-              </div>
+            <DialogTrigger className="h-8 px-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md inline-flex items-center text-sm font-medium transition-colors" title="Saved Snippets">
+              <BookmarkSimpleIcon size={18} className="mr-1" />
+              Snippets
             </DialogTrigger>
             <DialogContent className="max-w-xl max-h-[80vh] flex flex-col">
               <DialogHeader>
@@ -539,12 +675,9 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
           </Dialog>
 
           <Dialog open={isSaveSnippetOpen} onOpenChange={setIsSaveSnippetOpen}>
-            <DialogTrigger 
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-8 w-8 p-0 ml-1 text-muted-foreground"
-              title="Save current query as Snippet"
-              onClick={() => setSaveSnippetName("")}
-            >
-              <FloppyDiskIcon size={18} />
+            <DialogTrigger className="h-8 px-2 ml-1 text-muted-foreground hover:text-foreground hover:bg-accent rounded-md inline-flex items-center text-sm font-medium transition-colors" title="Save current query as Snippet" onClick={() => setSaveSnippetName("")}>
+              <FloppyDiskIcon size={18} className="mr-1" />
+              Save Snippet
             </DialogTrigger>
             <DialogContent className="max-w-sm">
               <DialogHeader>
@@ -705,6 +838,7 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                 dialect: PostgreSQL,
                 upperCaseKeywords: true,
                 schema: dbSchema,
+                defaultSchema: "public"
               }),
               updateListener,
             ]}
@@ -746,6 +880,13 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                   >
                     Query Plan
                   </button>
+                )}
+                
+                <div className="flex-1" />
+                {activeTab === "results" && results && results.length > 0 && (
+                  <div className="pr-2 pb-1">
+                    <ExportMenu onExport={handleExport} />
+                  </div>
                 )}
               </div>
 
@@ -817,10 +958,27 @@ export default function QueryEditor({ tab }: { tab: TabDoc }) {
                                       ) : typeof val === "boolean" ? (
                                         val ? "true" : "false"
                                       ) : typeof val === "object" ? (
-                                        <div className="flex items-center gap-1.5 opacity-80" title={JSON.stringify(val)}>
-                                          <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 font-bold text-[9px] px-1 py-0.5 rounded-sm uppercase tracking-wider">JSON</span>
-                                          <span className="truncate max-w-[200px]">{JSON.stringify(val)}</span>
-                                        </div>
+                                        <Dialog>
+                                          <DialogTrigger className="flex items-center gap-1.5 opacity-80 cursor-pointer hover:opacity-100 transition-opacity" title="Click to view JSON">
+                                            <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 font-bold text-[9px] px-1 py-0.5 rounded-sm uppercase tracking-wider">JSON</span>
+                                            <span className="truncate max-w-[200px] hover:underline decoration-emerald-500/50 underline-offset-2 text-left">{JSON.stringify(val)}</span>
+                                          </DialogTrigger>
+                                          <DialogContent className="max-w-3xl h-[80vh] flex flex-col p-4 text-left">
+                                            <DialogHeader className="mb-2">
+                                              <DialogTitle className="text-emerald-500">JSON Viewer ({c.name})</DialogTitle>
+                                            </DialogHeader>
+                                            <div className="flex-1 overflow-hidden border border-border rounded-md relative shadow-inner">
+                                              <CodeMirror
+                                                value={JSON.stringify(val, null, 2)}
+                                                height="100%"
+                                                style={{ height: '100%', position: 'absolute', inset: 0 }}
+                                                className="text-sm font-mono"
+                                                readOnly={true}
+                                                theme={tokyoNight}
+                                              />
+                                            </div>
+                                          </DialogContent>
+                                        </Dialog>
                                       ) : (c.data_type?.toLowerCase() === "bool" || c.data_type?.toLowerCase() === "boolean") && typeof val === "string" ? (
                                         val === "t" || val === "true" ? "true" : val === "f" || val === "false" ? "false" : String(val)
                                       ) : (

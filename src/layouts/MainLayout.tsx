@@ -41,10 +41,11 @@ export default function MainLayout() {
 
   return (
     <div className={cn(
-      "flex h-screen bg-background text-foreground overflow-hidden",
+      "flex flex-col h-screen bg-background text-foreground overflow-hidden",
       enabled && (mode === "NORMAL" ? "vim-mode-normal" : "vim-mode-insert"),
       enabled && `vim-pane-${activePane.toLowerCase()}`
     )}>
+      <div className="flex flex-1 overflow-hidden">
       {/* ── Sidebar ─────────────────────────────────────────────── */}
       <div className={cn(
         "shrink-0 w-64 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-all duration-200 vim-ignore"
@@ -93,11 +94,13 @@ export default function MainLayout() {
         </div>
       </div>
 
+      </div>
+
       {/* Vim Status Bar */}
       {enabled && (
         <div className={cn(
-          "fixed bottom-0 left-0 w-full backdrop-blur text-white text-xs font-mono font-bold px-4 py-1 z-50 flex items-center gap-4 shadow-[0_-4px_10px_rgba(0,0,0,0.5)] transition-colors",
-          mode === "NORMAL" ? "bg-emerald-600/90" : "bg-blue-600/90"
+          "w-full text-white text-xs font-mono font-bold px-4 py-1 z-50 flex items-center gap-4 transition-colors",
+          mode === "NORMAL" ? "bg-emerald-600" : "bg-blue-600"
         )}>
           <span className="uppercase tracking-wider">-- {mode} --</span>
           <span className="opacity-70">{activePane}</span>

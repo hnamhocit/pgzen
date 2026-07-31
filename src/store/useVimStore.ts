@@ -6,9 +6,11 @@ export type VimPane = "SIDEBAR" | "EDITOR";
 
 interface VimStore {
   enabled: boolean;
+  hasChosenMode: boolean;
   mode: VimMode;
   activePane: VimPane;
   setEnabled: (enabled: boolean) => void;
+  setHasChosenMode: (hasChosenMode: boolean) => void;
   setMode: (mode: VimMode) => void;
   setActivePane: (pane: VimPane) => void;
 }
@@ -16,10 +18,12 @@ interface VimStore {
 export const useVimStore = create<VimStore>()(
   persist(
     (set) => ({
-      enabled: true,
+      enabled: false,
+      hasChosenMode: false,
       mode: "NORMAL",
       activePane: "EDITOR",
       setEnabled: (enabled) => set({ enabled }),
+      setHasChosenMode: (hasChosenMode) => set({ hasChosenMode }),
       setMode: (mode) => set({ mode }),
       setActivePane: (activePane) => set({ activePane }),
     }),

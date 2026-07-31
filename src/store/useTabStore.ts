@@ -38,6 +38,7 @@ interface TabState {
   
   addTabHistory: (id: string, item: { query: string; timestamp: number; error?: string }) => void;
   clearTabHistory: (id: string) => void;
+  updateTabMeta: (id: string, meta: Partial<TabDoc>) => void;
 }
 
 export const useTabStore = create<TabState>()(
@@ -184,6 +185,14 @@ export const useTabStore = create<TabState>()(
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.id === id ? { ...t, history: [] } : t
+      ),
+    }));
+  },
+
+  updateTabMeta: (id, meta) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.id === id ? { ...t, ...meta } : t
       ),
     }));
   },

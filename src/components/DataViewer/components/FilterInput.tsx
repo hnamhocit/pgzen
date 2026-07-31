@@ -53,6 +53,7 @@ export function FilterInput() {
     return [];
   });
   
+  const [globalSearch, setGlobalSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
 
   const handleOpenChange = (open: boolean) => {
@@ -93,35 +94,40 @@ export function FilterInput() {
     return OPERATORS.filter((op) => ["=", "!=", "ILIKE", "IS NULL", "IS NOT NULL"].includes(op.value));
   };
 
-  const applyFilters = (conds: FilterCondition[]) => {
-    if (conds.length === 0) {
+  const applyFilters = (conds: FilterCondition[], search: string = globalSearch) => {
+    const sqlParts: string[] = [];
+    
+    if (conds.length > 0) {
+      const condsParts = conds.map((c) => {
+        if (c.operator === "IS NULL" || c.operator === "IS NOT NULL") {
+          return `"${c.column}" ${c.operator}`;
+        }
+        const escapedVal = c.value.replace(/'/g, "''");
+        if (c.operator === "ILIKE") {
+          return `"${c.column}" ${c.operator} '%${escapedVal}%'`;
+        }
+        if (c.operator === "@>") {
+          return `"${c.column}" ${c.operator} '${escapedVal}'`;
+        }
+        return `"${c.column}" ${c.operator} '${escapedVal}'`;
+      });
+      sqlParts.push(`(${condsParts.join(" AND ")})`);
+    }
+
+    if (search.trim()) {
+      const escapedSearch = search.replace(/'/g, "''");
+      const searchParts = columns.map(c => `"${c.name}"::text ILIKE '%${escapedSearch}%'`);
+      if (searchParts.length > 0) {
+        sqlParts.push(`(${searchParts.join(" OR ")})`);
+      }
+    }
+
+    if (sqlParts.length === 0) {
       setFilterText("");
       setAppliedFilter("");
       setPage(1);
       return;
     }
-
-    const sqlParts = conds.map((c) => {
-      if (c.operator === "IS NULL" || c.operator === "IS NOT NULL") {
-        return `"${c.column}" ${c.operator}`;
-      }
-
-      // Escape single quotes for SQL
-      const escapedVal = c.value.replace(/'/g, "''");
-
-      if (c.operator === "ILIKE") {
-        return `"${c.column}" ${c.operator} '%${escapedVal}%'`;
-      }
-      
-      // For JSON operator @> (e.g., column @> '{"role":"admin"}')
-      if (c.operator === "@>") {
-        return `"${c.column}" ${c.operator} '${escapedVal}'`;
-      }
-      
-      // Postgres automatically casts string literals to the column's actual type.
-      // So wrapping in single quotes is universally safe and prevents syntax errors.
-      return `"${c.column}" ${c.operator} '${escapedVal}'`;
-    });
 
     const newFilter = sqlParts.join(" AND ");
     setFilterText(newFilter);
@@ -152,13 +158,14 @@ export function FilterInput() {
   };
 
   const handleApply = () => {
-    applyFilters(conditions);
+    applyFilters(conditions, globalSearch);
     setIsOpen(false);
   };
   
   const handleClear = () => {
     setConditions([]);
-    applyFilters([]);
+    setGlobalSearch("");
+    applyFilters([], "");
     setIsOpen(false);
   };
 
@@ -170,6 +177,21 @@ export function FilterInput() {
 
   return (
     <div className="relative flex items-center gap-2">
+      <Input
+        type="text"
+        placeholder="Search anywhere..."
+        value={globalSearch}
+        onChange={(e) => {
+          setGlobalSearch(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            applyFilters(conditions, globalSearch);
+          }
+        }}
+        className="h-9 w-64 text-sm bg-background border-border"
+      />
+      
       <Popover open={isOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger>
           <div className="h-9 border-border bg-background flex items-center gap-2 border px-3 py-1 rounded-md cursor-pointer hover:bg-muted text-sm shadow-sm transition-colors">

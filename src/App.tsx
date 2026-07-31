@@ -6,6 +6,7 @@ import Help from "./pages/Help";
 import { Toaster } from "@/components/ui/sonner";
 import { CommandPalette } from "@/components/CommandPalette";
 import { VimManager } from "@/components/VimManager";
+import { VimModeSetupDialog } from "@/components/VimModeSetupDialog";
 import { AutoUpdater } from "@/components/AutoUpdater";
 import "./App.css";
 
@@ -28,6 +29,7 @@ function App() {
       <Toaster position="bottom-right" richColors />
       <CommandPalette />
       <VimManager />
+      <VimModeSetupDialog />
       <AutoUpdater />
     </>
   );

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -35,7 +35,7 @@ import {
   InfoIcon,
   FloppyDiskIcon,
 } from "@phosphor-icons/react";
-import { testConnection, saveConnection } from "@/lib/tauri";
+import { testConnection, saveConnection, getPassword } from "@/lib/tauri";
 import { useConnectionStore } from "@/store/useConnectionStore";
 import { cn } from "@/lib/utils";
 
@@ -143,7 +143,7 @@ export default function ConnectionDialog({
 }: {
   children?: React.ReactElement;
 }) {
-  const { isDialogOpen, setDialogOpen, add } = useConnectionStore();
+  const { isDialogOpen, setDialogOpen, add, editingConnection } = useConnectionStore();
   const [isTesting, setIsTesting] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
@@ -165,6 +165,28 @@ export default function ConnectionDialog({
   });
 
   const { errors } = form.formState;
+
+  useEffect(() => {
+    if (editingConnection && isDialogOpen) {
+      form.reset({
+        name: editingConnection.name,
+        host: editingConnection.host,
+        port: editingConnection.port,
+        database: editingConnection.database,
+        username: editingConnection.username,
+        sslMode: editingConnection.ssl_mode as any,
+        applicationName: editingConnection.application_name || "pgzen",
+        useSsh: editingConnection.use_ssh,
+        sshHost: editingConnection.ssh_host,
+        sshPort: editingConnection.ssh_port,
+        sshUser: editingConnection.ssh_user,
+        connectTimeout: 10,
+      });
+      getPassword(editingConnection.id).then(pass => {
+        if (pass) form.setValue("password", pass);
+      });
+    }
+  }, [editingConnection, isDialogOpen, form]);
 
   // Reset state khi dialog đóng/mở
   const handleOpenChange = (open: boolean) => {
@@ -240,7 +262,7 @@ export default function ConnectionDialog({
 
       const saved = await saveConnection(
         {
-          id: "",
+          id: editingConnection ? editingConnection.id : "",
           name: data.name,
           host: data.host,
           port: data.port,
@@ -420,7 +442,6 @@ export default function ConnectionDialog({
                         id="conn-pass"
                         type="password"
                         className="font-mono text-sm"
-                        placeholder="••••••••"
                         {...form.register("password")}
                         onChange={(e) => {
                           form.register("password").onChange(e);
@@ -511,7 +532,6 @@ export default function ConnectionDialog({
                             id="ssh-pass"
                             type="password"
                             className="font-mono text-sm"
-                            placeholder="••••••••"
                             {...form.register("sshPassword")}
                             onChange={(e) => {
                               form.register("sshPassword").onChange(e);
